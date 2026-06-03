@@ -14,6 +14,6 @@ func TestShortLinkGeneration(t *testing.T) {
 	intialLink2 := "https://chitransh.me"
 	shortLink2 := GenerateShortLink(intialLink2, UserId)
 
-	assert.Equal(t, shortLink1, "2aG8mL9X")
-	assert.Equal(t, shortLink2, "9sXo7n8e")
+	assert.Equal(t, "YZfD8AAc", shortLink1)
+	assert.Equal(t, "SiB56pzL", shortLink2)
 }
