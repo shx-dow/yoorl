@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -45,10 +46,13 @@ func SaveUrlMapping(shortUrl string, originalUrl string, userId string) {
 	}
 }
 
-func RetrieveInitialUrl(shortUrl string) string {
+func RetrieveInitialUrl(shortUrl string) (string, error) {
 	result, err := storeService.redisClient.Get(ctx, shortUrl).Result()
 	if err != nil {
-		panic(fmt.Sprintf("Failed RetrieveInitialUrl url | Error: %v - shortUrl: %s\n", err, shortUrl))
+		if errors.Is(err, redis.Nil) {
+			return "", fmt.Errorf("short URL %s not found", shortUrl)
+		}
+		return "", fmt.Errorf("failed to retrieve short URL %s: %w", shortUrl, err)
 	}
-	return result
+	return result, nil
 }

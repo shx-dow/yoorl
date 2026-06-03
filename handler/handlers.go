@@ -10,7 +10,7 @@ import (
 
 type UrlCreationRequest struct {
 	LongUrl string `json:"long_url" binding:"required"`
-	UserId string `json:"user_id" binding:"required"`
+	UserId  string `json:"user_id" binding:"required"`
 }
 
 func CreateShortUrl(c *gin.Context) {
@@ -26,13 +26,17 @@ func CreateShortUrl(c *gin.Context) {
 	host := "http://localhost:9808/"
 
 	c.JSON(200, gin.H{
-		"message": "short url created successfully",
+		"message":   "short url created successfully",
 		"short_url": host + shortUrl,
 	})
 }
 
 func HandleShortUrlRedirect(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
-	intialUrl := store.RetrieveInitialUrl(shortUrl)
-	c.Redirect(302, intialUrl)
+	initialUrl, err := store.RetrieveInitialUrl(shortUrl)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.Redirect(http.StatusFound, initialUrl)
 }
