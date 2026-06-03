@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shx-dow/yoorl/handler"
@@ -26,7 +27,12 @@ func main() {
 
 	store.InitializeStore()
 
-	err := r.Run(":9808")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9808"
+	}
+
+	err := r.Run(":" + port)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to start the web server - Error: &v", err))
 	}
