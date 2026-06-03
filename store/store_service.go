@@ -10,12 +10,18 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-type StorageService struct {
+type Store interface {
+	SaveUrlMapping(shortUrl string, originalUrl string, userId string)
+	RetrieveInitialUrl(shortUrl string) (string, error)
+	DeleteUrlMapping(shortUrl string)
+}
+
+type RedisStore struct {
 	redisClient *redis.Client
 }
 
 var (
-	storeService = &StorageService{}
+	defaultStore Store
 	ctx          = context.Background()
 )
 
@@ -28,7 +34,11 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func InitializeStore() *StorageService {
+func SetStore(s Store) {
+	defaultStore = s
+}
+
+func InitializeStore() Store {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		Password: getEnv("REDIS_PASSWORD", ""),
@@ -43,19 +53,32 @@ func InitializeStore() *StorageService {
 
 	fmt.Printf("\nRedis started successfully: pong message = {%s}", pong)
 
-	storeService.redisClient = redisClient
-	return storeService
+	store := &RedisStore{redisClient: redisClient}
+	SetStore(store)
+	return store
 }
 
 func SaveUrlMapping(shortUrl string, originalUrl string, userId string) {
-	err := storeService.redisClient.Set(ctx, shortUrl, originalUrl, CacheDuration).Err()
+	defaultStore.SaveUrlMapping(shortUrl, originalUrl, userId)
+}
+
+func RetrieveInitialUrl(shortUrl string) (string, error) {
+	return defaultStore.RetrieveInitialUrl(shortUrl)
+}
+
+func DeleteUrlMapping(shortUrl string) {
+	defaultStore.DeleteUrlMapping(shortUrl)
+}
+
+func (s *RedisStore) SaveUrlMapping(shortUrl string, originalUrl string, userId string) {
+	err := s.redisClient.Set(ctx, shortUrl, originalUrl, CacheDuration).Err()
 	if err != nil {
 		panic(fmt.Sprintf("Failed saving key url | Error: %v - shortUrl: %s - originalUrl: %s\n", err, shortUrl, originalUrl))
 	}
 }
 
-func RetrieveInitialUrl(shortUrl string) (string, error) {
-	result, err := storeService.redisClient.Get(ctx, shortUrl).Result()
+func (s *RedisStore) RetrieveInitialUrl(shortUrl string) (string, error) {
+	result, err := s.redisClient.Get(ctx, shortUrl).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return "", fmt.Errorf("short URL %s not found", shortUrl)
@@ -63,4 +86,11 @@ func RetrieveInitialUrl(shortUrl string) (string, error) {
 		return "", fmt.Errorf("failed to retrieve short URL %s: %w", shortUrl, err)
 	}
 	return result, nil
+}
+
+func (s *RedisStore) DeleteUrlMapping(shortUrl string) {
+	err := s.redisClient.Del(ctx, shortUrl).Err()
+	if err != nil {
+		panic(fmt.Sprintf("Failed deleting key url | Error: %v - shortUrl: %s\n", err, shortUrl))
+	}
 }

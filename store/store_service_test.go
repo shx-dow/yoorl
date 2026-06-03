@@ -1,21 +1,14 @@
 package store
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-var testStoreService = &StorageService{}
+func TestMemoryStoreInsertionAndRetrieval(t *testing.T) {
+	SetStore(NewMemoryStore())
 
-func init() {
-	testStoreService = InitializeStore()
-}
-
-func TestStoreInit(t *testing.T) {
-	assert.True(t, testStoreService.redisClient != nil)
-}
-
-func TestInsertionAndRetrieval(t *testing.T) {
 	intialLink := "https://www.google.com"
 	userUUID := "1234"
 	shortUrl := "abcd"
@@ -26,4 +19,22 @@ func TestInsertionAndRetrieval(t *testing.T) {
 
 	assert.Nil(t, err)
 	assert.Equal(t, intialLink, retrievedUrl)
+}
+
+func TestMemoryStoreMissingUrl(t *testing.T) {
+	SetStore(NewMemoryStore())
+
+	_, err := RetrieveInitialUrl("nonexistent")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestMemoryStoreDelete(t *testing.T) {
+	SetStore(NewMemoryStore())
+
+	SaveUrlMapping("abc", "https://example.com", "user1")
+	DeleteUrlMapping("abc")
+
+	_, err := RetrieveInitialUrl("abc")
+	assert.Error(t, err)
 }
