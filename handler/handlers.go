@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,11 @@ func CreateShortUrl(c *gin.Context) {
 	var creationRequest UrlCreationRequest
 	if err := c.ShouldBindJSON(&creationRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := url.ParseRequestURI(creationRequest.LongUrl); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url provided"})
 		return
 	}
 
