@@ -31,7 +31,7 @@ func main() {
 	r := gin.New()
 	r.Use(
 		middleware.RequestID(),
-		middleware.Logger(log),
+		gin.Logger(),
 		middleware.Recovery(log),
 		middleware.CORS(),
 	)
