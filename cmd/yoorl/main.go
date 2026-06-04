@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,40 +56,54 @@ func printUsage() {
 	fmt.Println("Usage: yoorl <command> [args]")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  create     Create a short URL")
-	fmt.Println("  delete     Delete a short URL")
-	fmt.Println("  update     Update a short URL's destination")
-	fmt.Println("  analytics  Get click analytics")
+	fmt.Println("  create [--alias,-a <alias>] [--user,-u <id>] <url>")
+	fmt.Println("                           Create a short URL")
+	fmt.Println("  delete <short-url>     Delete a short URL")
+	fmt.Println("  update <short-url> <new-url>")
+	fmt.Println("                           Update a short URL's destination")
+	fmt.Println("  analytics <short-url>  Get click analytics")
 	fmt.Println()
 	fmt.Println("Environment:")
 	fmt.Println("  YOORL_BASE_URL    API base URL (default: http://localhost:8080)")
 }
 
 func cmdCreate(args []string) {
-	fs := flag.NewFlagSet("create", flag.ExitOnError)
-	alias := fs.String("alias", "", "custom alias for the short URL")
-	aliasShort := fs.String("a", "", "custom alias (shorthand)")
-	user := fs.String("user", "cli", "user identifier")
-	userShort := fs.String("u", "cli", "user identifier (shorthand)")
+	var aliasVal, userVal, target string
+	userVal = "cli"
 
-	if err := fs.Parse(args); err != nil {
-		os.Exit(1)
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--alias" || args[i] == "-alias":
+			if i+1 < len(args) {
+				i++
+				aliasVal = args[i]
+			}
+		case args[i] == "-a":
+			if i+1 < len(args) {
+				i++
+				aliasVal = args[i]
+			}
+		case args[i] == "--user" || args[i] == "-user":
+			if i+1 < len(args) {
+				i++
+				userVal = args[i]
+			}
+		case args[i] == "-u":
+			if i+1 < len(args) {
+				i++
+				userVal = args[i]
+			}
+		default:
+			if target == "" {
+				target = args[i]
+			}
+		}
 	}
 
-	target := fs.Arg(0)
 	if target == "" {
 		fmt.Fprintln(os.Stderr, "error: url is required")
-		fmt.Fprintln(os.Stderr, "Usage: yoorl create <url> [--alias <alias>] [--user <id>]")
+		fmt.Fprintln(os.Stderr, "Usage: yoorl create [--alias <alias>] [--user <id>] <url>")
 		os.Exit(1)
-	}
-
-	aliasVal := *alias
-	if aliasVal == "" {
-		aliasVal = *aliasShort
-	}
-	userVal := *user
-	if userVal == "" {
-		userVal = *userShort
 	}
 
 	body := map[string]string{
