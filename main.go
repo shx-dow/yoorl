@@ -49,6 +49,7 @@ func main() {
 	{
 		v1.POST("/urls", handler.CreateShortUrl)
 		v1.DELETE("/urls/:shortUrl", handler.DeleteShortUrl)
+		v1.PUT("/urls/:shortUrl", handler.UpdateShortUrl)
 		v1.GET("/urls/:shortUrl/analytics", handler.HandleGetAnalytics)
 	}
 

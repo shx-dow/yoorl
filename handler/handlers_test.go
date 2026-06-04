@@ -18,6 +18,7 @@ func setupTest() *gin.Engine {
 	r := gin.New()
 	r.POST("/v1/urls", CreateShortUrl)
 	r.DELETE("/v1/urls/:shortUrl", DeleteShortUrl)
+	r.PUT("/v1/urls/:shortUrl", UpdateShortUrl)
 	r.GET("/v1/urls/:shortUrl/analytics", HandleGetAnalytics)
 	r.GET("/r/:shortUrl", HandleShortUrlRedirect)
 	return r
@@ -187,6 +188,46 @@ func TestGetAnalyticsZeroClicks(t *testing.T) {
 	json.Unmarshal(w2.Body.Bytes(), &resp)
 	data2 := resp["data"].(map[string]interface{})
 	assert.Equal(t, float64(0), data2["total_clicks"])
+}
+
+func TestUpdateShortUrl(t *testing.T) {
+	r := setupTest()
+
+	body := `{"long_url": "https://example.com", "user_id": "test123"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/urls", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var createResp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &createResp)
+	data := createResp["data"].(map[string]interface{})
+	shortUrl := data["short_url"].(string)
+	shortUrl = shortUrl[strings.LastIndex(shortUrl, "/r/")+3:]
+
+	updateBody := `{"long_url": "https://updated.com"}`
+	updateReq := httptest.NewRequest(http.MethodPut, "/v1/urls/"+shortUrl, strings.NewReader(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, updateReq)
+	assert.Equal(t, http.StatusOK, w2.Code)
+
+	redirectReq := httptest.NewRequest(http.MethodGet, "/r/"+shortUrl, nil)
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, redirectReq)
+	assert.Equal(t, http.StatusFound, w3.Code)
+	assert.Equal(t, "https://updated.com", w3.Header().Get("Location"))
+}
+
+func TestUpdateShortUrlNotFound(t *testing.T) {
+	r := setupTest()
+
+	body := `{"long_url": "https://updated.com"}`
+	req := httptest.NewRequest(http.MethodPut, "/v1/urls/nonexistent", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestGetAnalyticsWithClicks(t *testing.T) {

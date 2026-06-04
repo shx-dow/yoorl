@@ -101,6 +101,37 @@ func DeleteShortUrl(c *gin.Context) {
 	success(c, 200, "short url deleted successfully", nil)
 }
 
+type updateUrlRequest struct {
+	LongUrl string `json:"long_url" binding:"required"`
+}
+
+func UpdateShortUrl(c *gin.Context) {
+	shortUrl := c.Param("shortUrl")
+
+	if _, err := store.RetrieveInitialUrl(shortUrl); err != nil {
+		notFound(c, "short URL not found")
+		return
+	}
+
+	var req updateUrlRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		badRequest(c, err.Error())
+		return
+	}
+
+	if _, err := url.ParseRequestURI(req.LongUrl); err != nil {
+		badRequest(c, "invalid URL provided")
+		return
+	}
+
+	store.SaveUrlMapping(shortUrl, req.LongUrl, "")
+
+	success(c, 200, "short url updated successfully", createUrlResponse{
+		ShortUrl: os.Getenv("BASE_URL") + "r/" + shortUrl,
+		LongUrl:  req.LongUrl,
+	})
+}
+
 func HandleGetAnalytics(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
 
