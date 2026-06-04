@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/shx-dow/yoorl/handler"
+	"github.com/shx-dow/yoorl/internal/analytics"
 	"github.com/shx-dow/yoorl/internal/middleware"
 	"github.com/shx-dow/yoorl/store"
 )
@@ -28,6 +29,10 @@ func main() {
 
 	store.InitializeStore()
 
+	tracker := analytics.NewTracker()
+	tracker.Start(log)
+	handler.SetTracker(tracker)
+
 	r := gin.New()
 	r.Use(
 		middleware.RequestID(),
@@ -44,6 +49,7 @@ func main() {
 	{
 		v1.POST("/urls", handler.CreateShortUrl)
 		v1.DELETE("/urls/:shortUrl", handler.DeleteShortUrl)
+		v1.GET("/urls/:shortUrl/analytics", handler.HandleGetAnalytics)
 	}
 
 	r.GET("/r/:shortUrl", handler.HandleShortUrlRedirect)
@@ -73,5 +79,6 @@ func main() {
 		log.Fatal().Err(err).Msg("server forced to shutdown")
 	}
 
+	tracker.Stop()
 	log.Info().Msg("server exited")
 }

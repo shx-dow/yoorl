@@ -18,6 +18,7 @@ func setupTest() *gin.Engine {
 	r := gin.New()
 	r.POST("/v1/urls", CreateShortUrl)
 	r.DELETE("/v1/urls/:shortUrl", DeleteShortUrl)
+	r.GET("/v1/urls/:shortUrl/analytics", HandleGetAnalytics)
 	r.GET("/r/:shortUrl", HandleShortUrlRedirect)
 	return r
 }
@@ -149,4 +150,71 @@ func TestDeleteShortUrlNotFound(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestGetAnalyticsNotFound(t *testing.T) {
+	r := setupTest()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/urls/nonexistent/analytics", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestGetAnalyticsZeroClicks(t *testing.T) {
+	r := setupTest()
+
+	body := `{"long_url": "https://example.com", "user_id": "test123"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/urls", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var createResp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &createResp)
+	data := createResp["data"].(map[string]interface{})
+	shortUrl := data["short_url"].(string)
+	shortUrl = shortUrl[strings.LastIndex(shortUrl, "/r/")+3:]
+
+	req2 := httptest.NewRequest(http.MethodGet, "/v1/urls/"+shortUrl+"/analytics", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+
+	assert.Equal(t, http.StatusOK, w2.Code)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w2.Body.Bytes(), &resp)
+	data2 := resp["data"].(map[string]interface{})
+	assert.Equal(t, float64(0), data2["total_clicks"])
+}
+
+func TestGetAnalyticsWithClicks(t *testing.T) {
+	r := setupTest()
+
+	body := `{"long_url": "https://example.com", "user_id": "test123"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/urls", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var createResp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &createResp)
+	data := createResp["data"].(map[string]interface{})
+	shortUrl := data["short_url"].(string)
+	shortUrl = shortUrl[strings.LastIndex(shortUrl, "/r/")+3:]
+
+	store.RecordClick(shortUrl, store.ClickEvent{})
+	store.RecordClick(shortUrl, store.ClickEvent{})
+
+	req2 := httptest.NewRequest(http.MethodGet, "/v1/urls/"+shortUrl+"/analytics", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+
+	assert.Equal(t, http.StatusOK, w2.Code)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w2.Body.Bytes(), &resp)
+	data2 := resp["data"].(map[string]interface{})
+	assert.Equal(t, float64(2), data2["total_clicks"])
 }

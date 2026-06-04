@@ -3,11 +3,19 @@ package handler
 import (
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shx-dow/yoorl/internal/analytics"
 	"github.com/shx-dow/yoorl/shortener"
 	"github.com/shx-dow/yoorl/store"
 )
+
+var clickTracker *analytics.Tracker
+
+func SetTracker(t *analytics.Tracker) {
+	clickTracker = t
+}
 
 type createUrlRequest struct {
 	LongUrl     string `json:"long_url" binding:"required"`
@@ -68,6 +76,16 @@ func HandleShortUrlRedirect(c *gin.Context) {
 		notFound(c, "short URL not found")
 		return
 	}
+
+	if clickTracker != nil {
+		clickTracker.Track(shortUrl, store.ClickEvent{
+			Timestamp: time.Now(),
+			IP:        c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+			Referer:   c.Request.Referer(),
+		})
+	}
+
 	c.Redirect(302, initialUrl)
 }
 
@@ -81,4 +99,21 @@ func DeleteShortUrl(c *gin.Context) {
 
 	store.DeleteUrlMapping(shortUrl)
 	success(c, 200, "short url deleted successfully", nil)
+}
+
+func HandleGetAnalytics(c *gin.Context) {
+	shortUrl := c.Param("shortUrl")
+
+	if _, err := store.RetrieveInitialUrl(shortUrl); err != nil {
+		notFound(c, "short URL not found")
+		return
+	}
+
+	stats, err := store.GetAnalytics(shortUrl)
+	if err != nil {
+		internalError(c, "failed to retrieve analytics")
+		return
+	}
+
+	success(c, 200, "", stats)
 }
