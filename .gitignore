@@ -1,6 +1,6 @@
-yoorl
-yoorl.exe
-yoorl-cli.exe
+/yoorl
+/yoorl.exe
+/yoorl-cli.exe
 *.test
 *.out
 cli_out.txt
