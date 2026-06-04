@@ -5,3 +5,5 @@
 *.out
 cli_out.txt
 cli_err.txt
+server_out.txt
+server_err.txt

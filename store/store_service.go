@@ -59,24 +59,20 @@ func SetStore(s Store) {
 	defaultStore = s
 }
 
-func InitializeStore() Store {
+func InitializeStore() error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		Password: getEnv("REDIS_PASSWORD", ""),
 		DB:       0,
 	})
 
-	pong, err := redisClient.Ping(ctx).Result()
-
-	if err != nil {
-		panic(fmt.Sprintf("Error init Redis: %v", err))
+	if _, err := redisClient.Ping(ctx).Result(); err != nil {
+		return fmt.Errorf("redis connection failed: %w", err)
 	}
-
-	fmt.Printf("\nRedis started successfully: pong message = {%s}", pong)
 
 	store := &RedisStore{redisClient: redisClient}
 	SetStore(store)
-	return store
+	return nil
 }
 
 func SaveUrlMapping(shortUrl string, originalUrl string, userId string) {

@@ -27,7 +27,10 @@ func main() {
 		port = "8080"
 	}
 
-	store.InitializeStore()
+	if err := store.InitializeStore(); err != nil {
+		log.Warn().Err(err).Msg("Redis unavailable, using in-memory store")
+		store.SetStore(store.NewMemoryStore())
+	}
 
 	tracker := analytics.NewTracker()
 	tracker.Start(log)
