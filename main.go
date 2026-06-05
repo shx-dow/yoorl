@@ -36,6 +36,8 @@ func main() {
 	tracker.Start(log)
 	handler.SetTracker(tracker)
 
+	limiter := middleware.NewTokenBucket(100, 50)
+
 	r := gin.New()
 	r.Use(
 		middleware.RequestID(),
@@ -49,6 +51,7 @@ func main() {
 	})
 
 	v1 := r.Group("/v1")
+	v1.Use(middleware.RateLimit(limiter))
 	{
 		v1.POST("/urls", handler.CreateShortUrl)
 		v1.DELETE("/urls/:shortUrl", handler.DeleteShortUrl)
