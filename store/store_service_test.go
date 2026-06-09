@@ -9,16 +9,16 @@ import (
 func TestMemoryStoreInsertionAndRetrieval(t *testing.T) {
 	SetStore(NewMemoryStore())
 
-	intialLink := "https://www.google.com"
+	initialLink := "https://www.google.com"
 	userUUID := "1234"
 	shortUrl := "abcd"
 
-	SaveUrlMapping(shortUrl, intialLink, userUUID)
+	SaveUrlMapping(shortUrl, initialLink, userUUID)
 
 	retrievedUrl, err := RetrieveInitialUrl(shortUrl)
 
 	assert.Nil(t, err)
-	assert.Equal(t, intialLink, retrievedUrl)
+	assert.Equal(t, initialLink, retrievedUrl)
 }
 
 func TestMemoryStoreMissingUrl(t *testing.T) {

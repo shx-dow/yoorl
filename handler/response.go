@@ -38,6 +38,3 @@ func conflict(c *gin.Context, err string) {
 	c.JSON(409, APIResponse{Error: err})
 }
 
-func tooManyRequests(c *gin.Context) {
-	c.JSON(429, APIResponse{Error: "rate limit exceeded"})
-}
