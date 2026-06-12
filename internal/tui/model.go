@@ -3,7 +3,6 @@ package tui
 import (
 	"time"
 
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,19 +21,22 @@ type model struct {
 	client    *Client
 	screen    screen
 	urls      []*store.UrlEntry
-	table     table.Model
+	cursor    int
 	analytics *store.Analytics
 	err       error
 	textInput textinput.Model
 	quitting  bool
 	width     int
 	height    int
+	note      string
+	noteUntil time.Time
 }
 
 type urlsLoadedMsg []*store.UrlEntry
 type analyticsLoadedMsg *store.Analytics
 type errMsg error
 type tickMsg struct{}
+type noteTimeoutMsg struct{}
 
 var (
 	headerStyle = lipgloss.NewStyle().
@@ -46,8 +48,7 @@ var (
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244"))
 
-	detailStyle = lipgloss.NewStyle().
-			Padding(0, 1)
+	detailStyle = lipgloss.NewStyle().Padding(0, 1)
 
 	errStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("196"))
@@ -55,32 +56,25 @@ var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("33"))
+
+	selectedStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("15")).
+			Background(lipgloss.Color("33"))
+
+	cursorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("33")).
+			Bold(true)
+
+	hashStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("220"))
+
+	noteStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("46")).
+			Bold(true)
 )
 
 func initialModel(client *Client) model {
-	t := table.New(
-		table.WithColumns([]table.Column{
-			{Title: "#", Width: 4},
-			{Title: "Short URL", Width: 12},
-			{Title: "Destination", Width: 50},
-			{Title: "Clicks", Width: 8},
-		}),
-		table.WithFocused(true),
-		table.WithHeight(10),
-	)
-
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("33")).
-		BorderBottom(true).
-		Bold(false)
-	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("33")).
-		Bold(false)
-	t.SetStyles(s)
-
 	ti := textinput.New()
 	ti.Placeholder = "https://example.com"
 	ti.Width = 60
@@ -88,7 +82,6 @@ func initialModel(client *Client) model {
 	return model{
 		client:    client,
 		screen:    screenList,
-		table:     t,
 		textInput: ti,
 	}
 }
@@ -124,4 +117,9 @@ func tick() tea.Cmd {
 	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg{}
 	})
+}
+
+func (m *model) setNote(msg string, duration time.Duration) {
+	m.note = msg
+	m.noteUntil = time.Now().Add(duration)
 }

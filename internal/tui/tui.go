@@ -3,9 +3,9 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/shx-dow/yoorl/store"
 )
@@ -25,13 +25,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.table.SetWidth(msg.Width - 4)
-
-		detailHeight := msg.Height - m.table.Height() - 8
-		if detailHeight < 5 {
-			detailHeight = 5
-		}
-		m.table.SetHeight(msg.Height - detailHeight - 8)
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -59,7 +52,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case urlsLoadedMsg:
 		m.urls = []*store.UrlEntry(msg)
 		m.err = nil
-		cmds = append(cmds, m.updateTable())
+		m.clampCursor()
+		if len(m.urls) > 0 {
+			m.analytics = nil
+			cmds = append(cmds, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl))
+		} else {
+			m.analytics = nil
+		}
 
 	case analyticsLoadedMsg:
 		m.analytics = msg
@@ -70,6 +69,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds = append(cmds, loadURLs(m.client), tick())
+
+	case noteTimeoutMsg:
+		m.note = ""
 	}
 
 	return m, tea.Batch(cmds...)
@@ -77,16 +79,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+		if len(m.urls) > 0 {
+			m.analytics = nil
+			return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
+		}
+
+	case "down", "j":
+		if m.cursor < len(m.urls)-1 {
+			m.cursor++
+		}
+		if len(m.urls) > 0 {
+			m.analytics = nil
+			return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
+		}
+
 	case "enter":
-		if len(m.table.Rows()) == 0 {
+		if len(m.urls) == 0 {
 			return m, nil
 		}
-		row := m.table.SelectedRow()
-		if len(row) < 2 {
-			return m, nil
-		}
-		shortURL := row[1]
-		return m, loadAnalytics(m.client, shortURL)
+		m.analytics = nil
+		return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
 
 	case "n":
 		m.screen = screenCreate
@@ -95,33 +111,42 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "d":
-		if len(m.table.Rows()) == 0 {
+		if len(m.urls) == 0 {
 			return m, nil
 		}
 		m.screen = screenConfirmDelete
 		return m, nil
 
 	case "c":
-		if len(m.table.Rows()) == 0 {
+		if len(m.urls) == 0 {
 			return m, nil
 		}
-		row := m.table.SelectedRow()
-		if len(row) < 2 {
-			return m, nil
-		}
-		shortURL := row[1]
-		if err := clipboard.WriteAll(m.client.BaseURL + "/r/" + shortURL); err != nil {
+		fullURL := m.client.BaseURL + "/r/" + m.urls[m.cursor].ShortUrl
+		if err := clipboard.WriteAll(fullURL); err != nil {
 			m.err = fmt.Errorf("clipboard: %w", err)
+		} else {
+			m.setNote("Copied to clipboard!", 2*time.Second)
+			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				return noteTimeoutMsg{}
+			})
 		}
-		return m, nil
 
 	case "r":
 		return m, loadURLs(m.client)
 
-	default:
-		var cmd tea.Cmd
-		m.table, cmd = m.table.Update(msg)
-		return m, cmd
+	case "g":
+		if len(m.urls) > 0 {
+			m.cursor = 0
+			m.analytics = nil
+			return m, loadAnalytics(m.client, m.urls[0].ShortUrl)
+		}
+
+	case "G":
+		if len(m.urls) > 0 {
+			m.cursor = len(m.urls) - 1
+			m.analytics = nil
+			return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
+		}
 	}
 
 	return m, nil
@@ -161,12 +186,11 @@ func (m model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handleConfirmDeleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		row := m.table.SelectedRow()
-		if len(row) < 2 {
+		if m.cursor < 0 || m.cursor >= len(m.urls) {
 			m.screen = screenList
 			return m, nil
 		}
-		shortURL := row[1]
+		shortURL := m.urls[m.cursor].ShortUrl
 		m.screen = screenList
 		return m, tea.Sequence(
 			func() tea.Msg {
@@ -184,27 +208,13 @@ func (m model) handleConfirmDeleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m model) updateTable() tea.Cmd {
-	rows := make([]table.Row, 0, len(m.urls))
-	for i, u := range m.urls {
-		dest := u.LongUrl
-		if len(dest) > 47 {
-			dest = dest[:47] + "..."
-		}
-		rows = append(rows, table.Row{
-			fmt.Sprintf("%d", i+1),
-			u.ShortUrl,
-			dest,
-			fmt.Sprintf("%d", u.TotalClicks),
-		})
+func (m *model) clampCursor() {
+	if m.cursor >= len(m.urls) {
+		m.cursor = len(m.urls) - 1
 	}
-	m.table.SetRows(rows)
-
-	if len(rows) > 0 {
-		m.analytics = nil
-		return loadAnalytics(m.client, rows[0][1])
+	if m.cursor < 0 {
+		m.cursor = 0
 	}
-	return nil
 }
 
 func (m model) View() string {
@@ -236,12 +246,56 @@ func (m model) View() string {
 func (m model) renderList() string {
 	var b strings.Builder
 
-	b.WriteString(m.table.View())
+	if len(m.urls) == 0 {
+		b.WriteString(helpStyle.Render(" No URLs yet. Press n to create one."))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	for i, u := range m.urls {
+		dest := u.LongUrl
+		maxDest := m.width - 50
+		if maxDest < 20 {
+			maxDest = 20
+		}
+		if len(dest) > maxDest {
+			dest = dest[:maxDest-3] + "..."
+		}
+
+		fullShort := m.client.BaseURL + "/r/" + u.ShortUrl
+		maxFull := m.width - len(u.ShortUrl) - maxDest - 10
+		if maxFull < 10 {
+			maxFull = 10
+		}
+		if len(fullShort) > maxFull {
+			fullShort = fullShort[:maxFull-3] + "..."
+		}
+
+		line := fmt.Sprintf(" %d. %s  %s  %s",
+			i+1,
+			u.ShortUrl,
+			dest,
+			fullShort,
+		)
+
+		if i == m.cursor {
+			b.WriteString(selectedStyle.Render(line))
+		} else {
+			b.WriteString(line)
+		}
+		b.WriteString("\n")
+	}
+
 	b.WriteString("\n")
 
+	if m.note != "" {
+		b.WriteString(noteStyle.Render(" " + m.note))
+		b.WriteString("\n\n")
+	}
+
 	if m.err != nil {
-		b.WriteString(errStyle.Render(fmt.Sprintf("Error: %v", m.err)))
-		b.WriteString("\n")
+		b.WriteString(errStyle.Render(fmt.Sprintf(" Error: %v", m.err)))
+		b.WriteString("\n\n")
 	}
 
 	if m.analytics != nil {
@@ -254,24 +308,31 @@ func (m model) renderList() string {
 func (m model) renderAnalyticsDetail() string {
 	a := m.analytics
 
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render(fmt.Sprintf(" %s", a.ShortUrl)))
-	sb.WriteString(fmt.Sprintf(" → %s\n", m.client.BaseURL+"/r/"+a.ShortUrl))
-	sb.WriteString(fmt.Sprintf(" Total clicks: %d\n", a.TotalClicks))
+	separator := strings.Repeat("─", m.width-4)
+	if separator == "" {
+		separator = "────────────────"
+	}
 
-	if len(a.RecentClicks) > 0 {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(" %s\n", separator))
+	sb.WriteString(titleStyle.Render(fmt.Sprintf(" %s", a.ShortUrl)))
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf(" Full URL: %s\n", m.client.BaseURL+"/r/"+a.ShortUrl))
+	sb.WriteString(fmt.Sprintf(" Total clicks: %d\n\n", a.TotalClicks))
+
+	if a.TotalClicks > 0 {
 		sb.WriteString(" Recent visits:\n")
-		maxShow := 4
+		maxShow := 5
 		if len(a.RecentClicks) < maxShow {
 			maxShow = len(a.RecentClicks)
 		}
 		for _, c := range a.RecentClicks[:maxShow] {
 			ua := c.UserAgent
-			if len(ua) > 30 {
-				ua = ua[:30] + "..."
+			if len(ua) > 40 {
+				ua = ua[:40] + "..."
 			}
-			ts := c.Timestamp.Format("15:04:05")
-			sb.WriteString(fmt.Sprintf("   %s | %s | %s\n", ts, c.IP, ua))
+			ts := c.Timestamp.Format("2006-01-02 15:04:05")
+			sb.WriteString(fmt.Sprintf("   %s | %-15s | %s\n", ts, c.IP, ua))
 		}
 	}
 
@@ -289,21 +350,21 @@ func (m model) renderCreate() string {
 }
 
 func (m model) renderConfirmDelete() string {
-	row := m.table.SelectedRow()
-	if len(row) < 2 {
+	if m.cursor < 0 || m.cursor >= len(m.urls) {
 		return ""
 	}
+	u := m.urls[m.cursor]
 	var b strings.Builder
 	b.WriteString(errStyle.Render(" Delete confirmation"))
 	b.WriteString("\n\n")
-	b.WriteString(fmt.Sprintf(" Delete %s → %s?\n\n", row[1], row[2]))
+	b.WriteString(fmt.Sprintf(" Delete %s → %s?\n\n", u.ShortUrl, u.LongUrl))
 	b.WriteString(helpStyle.Render(" [y] yes  [any other key] cancel"))
 	return b.String()
 }
 
 func (m model) renderHelp() string {
 	if m.screen == screenList {
-		return helpStyle.Render(" [n] new  [d] delete  [c] copy  [r] refresh  [q] quit")
+		return helpStyle.Render(" [↑/↓] navigate  [enter] analytics  [n] new  [d] delete  [c] copy  [r] refresh  [q] quit")
 	}
 	return ""
 }
