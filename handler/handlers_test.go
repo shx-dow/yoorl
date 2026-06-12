@@ -16,6 +16,7 @@ func setupTest() *gin.Engine {
 	store.SetStore(store.NewMemoryStore())
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	r.GET("/v1/urls", HandleListUrls)
 	r.POST("/v1/urls", CreateShortUrl)
 	r.DELETE("/v1/urls/:shortUrl", DeleteShortUrl)
 	r.PUT("/v1/urls/:shortUrl", UpdateShortUrl)
@@ -258,4 +259,45 @@ func TestGetAnalyticsWithClicks(t *testing.T) {
 	json.Unmarshal(w2.Body.Bytes(), &resp)
 	data2 := resp["data"].(map[string]interface{})
 	assert.Equal(t, float64(2), data2["total_clicks"])
+}
+
+func TestListUrls(t *testing.T) {
+	r := setupTest()
+
+	body := `{"long_url": "https://example.com", "user_id": "test123"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/urls", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/v1/urls", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+
+	assert.Equal(t, http.StatusOK, w2.Code)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w2.Body.Bytes(), &resp)
+	data := resp["data"].([]interface{})
+	assert.Len(t, data, 1)
+
+	entry := data[0].(map[string]interface{})
+	assert.Equal(t, "https://example.com", entry["long_url"])
+	assert.Equal(t, "test123", entry["user_id"])
+}
+
+func TestListUrlsEmpty(t *testing.T) {
+	r := setupTest()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/urls", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data := resp["data"].([]interface{})
+	assert.Len(t, data, 0)
 }

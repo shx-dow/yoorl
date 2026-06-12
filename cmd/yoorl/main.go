@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/shx-dow/yoorl/internal/tui"
 )
 
 const defaultBaseURL = "http://localhost:8080"
@@ -36,6 +38,8 @@ func main() {
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
+	apiKey := os.Getenv("YOORL_API_KEY")
+
 	switch cmd {
 	case "create":
 		cmdCreate(args)
@@ -45,6 +49,11 @@ func main() {
 		cmdUpdate(args)
 	case "analytics":
 		cmdAnalytics(args)
+	case "tui":
+		if err := tui.StartTUI(baseURL(), apiKey); err != nil {
+			fmt.Fprintf(os.Stderr, "tui error: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", cmd)
 		printUsage()
@@ -62,9 +71,11 @@ func printUsage() {
 	fmt.Println("  update <short-url> <new-url>")
 	fmt.Println("                           Update a short URL's destination")
 	fmt.Println("  analytics <short-url>  Get click analytics")
+	fmt.Println("  tui                   Terminal UI dashboard")
 	fmt.Println()
 	fmt.Println("Environment:")
 	fmt.Println("  YOORL_BASE_URL    API base URL (default: http://localhost:8080)")
+	fmt.Println("  YOORL_API_KEY     API key for authentication")
 }
 
 func cmdCreate(args []string) {
