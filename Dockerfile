@@ -4,11 +4,11 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o yoorl .
+RUN CGO_ENABLED=0 go build -o yoorl ./cmd/yoorl/
 
 FROM alpine:3.21
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
 COPY --from=builder /app/yoorl .
 EXPOSE 8080
-CMD ["./yoorl"]
+CMD ["./yoorl", "server"]
