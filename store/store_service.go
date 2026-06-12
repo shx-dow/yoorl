@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -19,9 +20,17 @@ type ClickEvent struct {
 }
 
 type Analytics struct {
-	ShortUrl    string       `json:"short_url"`
-	TotalClicks int64        `json:"total_clicks"`
+	ShortUrl     string       `json:"short_url"`
+	TotalClicks  int64        `json:"total_clicks"`
 	RecentClicks []ClickEvent `json:"recent_clicks"`
+}
+
+type UrlEntry struct {
+	ShortUrl    string    `json:"short_url"`
+	LongUrl     string    `json:"long_url"`
+	UserId      string    `json:"user_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	TotalClicks int64     `json:"total_clicks"`
 }
 
 type Store interface {
@@ -30,6 +39,7 @@ type Store interface {
 	DeleteUrlMapping(shortUrl string)
 	RecordClick(shortUrl string, event ClickEvent)
 	GetAnalytics(shortUrl string) (*Analytics, error)
+	ListUrls(userId string) ([]*UrlEntry, error)
 }
 
 type RedisStore struct {
@@ -45,6 +55,8 @@ const (
 	CacheDuration      = 6 * time.Hour
 	analyticsListKey   = "analytics:visits:%s"
 	analyticsCountKey  = "analytics:count:%s"
+	urlIndexKey        = "yoorl:urls"
+	urlMetaKey         = "yoorl:meta:%s"
 	maxRecentVisits    = 100
 )
 
@@ -95,10 +107,32 @@ func GetAnalytics(shortUrl string) (*Analytics, error) {
 	return defaultStore.GetAnalytics(shortUrl)
 }
 
+func ListUrls(userId string) ([]*UrlEntry, error) {
+	return defaultStore.ListUrls(userId)
+}
+
 func (s *RedisStore) SaveUrlMapping(shortUrl string, originalUrl string, userId string) {
-	err := s.redisClient.Set(ctx, shortUrl, originalUrl, CacheDuration).Err()
+	pipe := s.redisClient.Pipeline()
+
+	pipe.Set(ctx, shortUrl, originalUrl, CacheDuration)
+	pipe.SAdd(ctx, urlIndexKey, shortUrl)
+
+	meta := map[string]string{
+		"long_url": originalUrl,
+		"user_id":  userId,
+	}
+	existing, _ := s.redisClient.HGetAll(ctx, fmt.Sprintf(urlMetaKey, shortUrl)).Result()
+	if createdAt, ok := existing["created_at"]; ok {
+		meta["created_at"] = createdAt
+	} else {
+		meta["created_at"] = time.Now().Format(time.RFC3339)
+	}
+
+	pipe.HSet(ctx, fmt.Sprintf(urlMetaKey, shortUrl), meta)
+
+	_, err := pipe.Exec(ctx)
 	if err != nil {
-		panic(fmt.Sprintf("Failed saving key url | Error: %v - shortUrl: %s - originalUrl: %s\n", err, shortUrl, originalUrl))
+		panic(fmt.Sprintf("Failed saving url mapping | Error: %v - shortUrl: %s\n", err, shortUrl))
 	}
 }
 
@@ -114,9 +148,15 @@ func (s *RedisStore) RetrieveInitialUrl(shortUrl string) (string, error) {
 }
 
 func (s *RedisStore) DeleteUrlMapping(shortUrl string) {
-	err := s.redisClient.Del(ctx, shortUrl).Err()
+	pipe := s.redisClient.Pipeline()
+	pipe.Del(ctx, shortUrl)
+	pipe.Del(ctx, fmt.Sprintf(urlMetaKey, shortUrl))
+	pipe.SRem(ctx, urlIndexKey, shortUrl)
+	pipe.Del(ctx, fmt.Sprintf(analyticsCountKey, shortUrl))
+	pipe.Del(ctx, fmt.Sprintf(analyticsListKey, shortUrl))
+	_, err := pipe.Exec(ctx)
 	if err != nil {
-		panic(fmt.Sprintf("Failed deleting key url | Error: %v - shortUrl: %s\n", err, shortUrl))
+		panic(fmt.Sprintf("Failed deleting url mapping | Error: %v - shortUrl: %s\n", err, shortUrl))
 	}
 }
 
@@ -169,4 +209,49 @@ func (s *RedisStore) GetAnalytics(shortUrl string) (*Analytics, error) {
 		TotalClicks:  total,
 		RecentClicks: clicks,
 	}, nil
+}
+
+func (s *RedisStore) ListUrls(userId string) ([]*UrlEntry, error) {
+	shortUrls, err := s.redisClient.SMembers(ctx, urlIndexKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list URLs: %w", err)
+	}
+
+	if len(shortUrls) == 0 {
+		return []*UrlEntry{}, nil
+	}
+
+	pipe := s.redisClient.Pipeline()
+	metaCmds := make([]*redis.StringStringMapCmd, len(shortUrls))
+	countCmds := make([]*redis.StringCmd, len(shortUrls))
+	for i, u := range shortUrls {
+		metaCmds[i] = pipe.HGetAll(ctx, fmt.Sprintf(urlMetaKey, u))
+		countCmds[i] = pipe.Get(ctx, fmt.Sprintf(analyticsCountKey, u))
+	}
+	_, _ = pipe.Exec(ctx)
+
+	entries := make([]*UrlEntry, 0, len(shortUrls))
+	for i, su := range shortUrls {
+		meta := metaCmds[i].Val()
+		if len(meta) == 0 {
+			continue
+		}
+
+		if userId != "" && meta["user_id"] != userId {
+			continue
+		}
+
+		createdAt, _ := time.Parse(time.RFC3339, meta["created_at"])
+		totalClicks, _ := strconv.ParseInt(countCmds[i].Val(), 10, 64)
+
+		entries = append(entries, &UrlEntry{
+			ShortUrl:    su,
+			LongUrl:     meta["long_url"],
+			UserId:      meta["user_id"],
+			CreatedAt:   createdAt,
+			TotalClicks: totalClicks,
+		})
+	}
+
+	return entries, nil
 }
