@@ -33,11 +33,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 				return m, tea.Quit
 			}
-		case "esc":
-			m.screen = screenList
-			m.err = nil
-			m.textInput.Reset()
-			return m, nil
+	case "esc":
+		m.screen = screenList
+		m.err = nil
+		m.urlInput.Reset()
+		m.aliasInput.Reset()
+		return m, nil
 		}
 
 		switch m.screen {
@@ -106,8 +107,11 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "n":
 		m.screen = screenCreate
-		m.textInput.Reset()
-		m.textInput.Focus()
+		m.urlInput.Reset()
+		m.aliasInput.Reset()
+		m.urlInput.Focus()
+		m.aliasInput.Blur()
+		m.focusedInput = 0
 		return m, nil
 
 	case "d":
@@ -154,16 +158,30 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "tab":
+		if m.focusedInput == 0 {
+			m.urlInput.Blur()
+			m.aliasInput.Focus()
+			m.focusedInput = 1
+		} else {
+			m.aliasInput.Blur()
+			m.urlInput.Focus()
+			m.focusedInput = 0
+		}
+		return m, nil
+
 	case "enter":
-		url := strings.TrimSpace(m.textInput.Value())
+		url := strings.TrimSpace(m.urlInput.Value())
 		if url == "" {
 			return m, nil
 		}
-		m.textInput.Reset()
+		alias := strings.TrimSpace(m.aliasInput.Value())
+		m.urlInput.Reset()
+		m.aliasInput.Reset()
 		m.screen = screenList
 		return m, tea.Sequence(
 			func() tea.Msg {
-				if _, err := m.client.CreateURL(url, ""); err != nil {
+				if _, err := m.client.CreateURL(url, alias); err != nil {
 					return errMsg(err)
 				}
 				return nil
@@ -173,12 +191,17 @@ func (m model) handleCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "esc":
 		m.screen = screenList
-		m.textInput.Reset()
+		m.urlInput.Reset()
+		m.aliasInput.Reset()
 		return m, nil
 
 	default:
 		var cmd tea.Cmd
-		m.textInput, cmd = m.textInput.Update(msg)
+		if m.focusedInput == 0 {
+			m.urlInput, cmd = m.urlInput.Update(msg)
+		} else {
+			m.aliasInput, cmd = m.aliasInput.Update(msg)
+		}
 		return m, cmd
 	}
 }
@@ -343,9 +366,22 @@ func (m model) renderCreate() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(" Create new short URL"))
 	b.WriteString("\n\n")
-	b.WriteString(" Enter the long URL:\n\n")
-	b.WriteString(" " + m.textInput.View() + "\n\n")
-	b.WriteString(helpStyle.Render(" [enter] create  [esc] cancel"))
+
+	urlLabel := " Long URL:"
+	if m.focusedInput == 0 {
+		urlLabel = cursorStyle.Render("▸ Long URL:")
+	}
+	b.WriteString(" " + urlLabel + "\n\n")
+	b.WriteString("  " + m.urlInput.View() + "\n\n")
+
+	aliasLabel := " Custom alias (optional):"
+	if m.focusedInput == 1 {
+		aliasLabel = cursorStyle.Render("▸ Custom alias (optional):")
+	}
+	b.WriteString(" " + aliasLabel + "\n\n")
+	b.WriteString("  " + m.aliasInput.View() + "\n\n")
+
+	b.WriteString(helpStyle.Render(" [tab] switch  [enter] create  [esc] cancel"))
 	return b.String()
 }
 

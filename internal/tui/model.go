@@ -18,18 +18,20 @@ const (
 )
 
 type model struct {
-	client    *Client
-	screen    screen
-	urls      []*store.UrlEntry
-	cursor    int
-	analytics *store.Analytics
-	err       error
-	textInput textinput.Model
-	quitting  bool
-	width     int
-	height    int
-	note      string
-	noteUntil time.Time
+	client       *Client
+	screen       screen
+	urls         []*store.UrlEntry
+	cursor       int
+	analytics    *store.Analytics
+	err          error
+	urlInput     textinput.Model
+	aliasInput   textinput.Model
+	focusedInput int
+	quitting     bool
+	width        int
+	height       int
+	note         string
+	noteUntil    time.Time
 }
 
 type urlsLoadedMsg []*store.UrlEntry
@@ -75,14 +77,21 @@ var (
 )
 
 func initialModel(client *Client) model {
-	ti := textinput.New()
-	ti.Placeholder = "https://example.com"
-	ti.Width = 60
+	urlIn := textinput.New()
+	urlIn.Placeholder = "https://example.com"
+	urlIn.Width = 60
+	urlIn.Focus()
+
+	aliasIn := textinput.New()
+	aliasIn.Placeholder = "my-custom-alias (optional)"
+	aliasIn.Width = 60
 
 	return model{
-		client:    client,
-		screen:    screenList,
-		textInput: ti,
+		client:       client,
+		screen:       screenList,
+		urlInput:     urlIn,
+		aliasInput:   aliasIn,
+		focusedInput: 0,
 	}
 }
 
