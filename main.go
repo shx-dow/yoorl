@@ -53,7 +53,8 @@ func main() {
 	v1 := r.Group("/v1")
 	v1.Use(middleware.APIKeyAuth(), middleware.RateLimit(limiter))
 	{
-		v1.POST("/urls", handler.CreateShortUrl)
+		v1.GET("/urls", handler.HandleListUrls)
+	v1.POST("/urls", handler.CreateShortUrl)
 		v1.DELETE("/urls/:shortUrl", handler.DeleteShortUrl)
 		v1.PUT("/urls/:shortUrl", handler.UpdateShortUrl)
 		v1.GET("/urls/:shortUrl/analytics", handler.HandleGetAnalytics)

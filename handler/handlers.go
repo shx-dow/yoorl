@@ -132,6 +132,23 @@ func UpdateShortUrl(c *gin.Context) {
 	})
 }
 
+func HandleListUrls(c *gin.Context) {
+	userId, _ := c.Get("user_id")
+	userIdStr, _ := userId.(string)
+
+	if qp := c.Query("user_id"); qp != "" {
+		userIdStr = qp
+	}
+
+	urls, err := store.ListUrls(userIdStr)
+	if err != nil {
+		internalError(c, "failed to list URLs")
+		return
+	}
+
+	success(c, 200, "", urls)
+}
+
 func HandleGetAnalytics(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
 
