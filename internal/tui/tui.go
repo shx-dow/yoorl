@@ -8,6 +8,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/shx-dow/yoorl/store"
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 func StartTUI(baseURL, apiKey string) error {
@@ -48,6 +49,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleCreateKey(msg)
 		case screenConfirmDelete:
 			return m.handleConfirmDeleteKey(msg)
+		case screenQr:
+			m.screen = screenList
+			return m, nil
 		}
 
 	case urlsLoadedMsg:
@@ -134,6 +138,21 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return noteTimeoutMsg{}
 			})
 		}
+
+	case "v":
+		if len(m.urls) == 0 {
+			return m, nil
+		}
+		shortURL := m.urls[m.cursor].ShortUrl
+		m.qrURL = m.client.BaseURL + "/r/" + shortURL
+		qr, err := qrcode.New(m.qrURL, qrcode.Medium)
+		if err != nil {
+			m.err = fmt.Errorf("qr: %w", err)
+			return m, nil
+		}
+		m.qrDisplay = qr.ToSmallString(false)
+		m.screen = screenQr
+		return m, nil
 
 	case "r":
 		return m, loadURLs(m.client)
@@ -255,6 +274,8 @@ func (m model) View() string {
 		b.WriteString(m.renderCreate())
 	case screenConfirmDelete:
 		b.WriteString(m.renderConfirmDelete())
+	case screenQr:
+		b.WriteString(m.renderQr())
 	default:
 		b.WriteString(m.renderList())
 	}
@@ -398,9 +419,19 @@ func (m model) renderConfirmDelete() string {
 	return b.String()
 }
 
+func (m model) renderQr() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(" QR Code"))
+	b.WriteString("\n\n")
+	b.WriteString(fmt.Sprintf(" %s\n\n", m.qrURL))
+	b.WriteString(" " + strings.ReplaceAll(m.qrDisplay, "\n", "\n ") + "\n\n")
+	b.WriteString(helpStyle.Render(" [esc] back"))
+	return b.String()
+}
+
 func (m model) renderHelp() string {
 	if m.screen == screenList {
-		return helpStyle.Render(" [↑/↓] navigate  [enter] analytics  [n] new  [d] delete  [c] copy  [r] refresh  [q] quit")
+		return helpStyle.Render(" [↑/↓] navigate  [enter] analytics  [n] new  [d] delete  [c] copy  [v] qr  [r] refresh  [q] quit")
 	}
 	return ""
 }

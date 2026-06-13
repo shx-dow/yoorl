@@ -21,6 +21,7 @@ import (
 	"github.com/shx-dow/yoorl/internal/middleware"
 	"github.com/shx-dow/yoorl/internal/tui"
 	"github.com/shx-dow/yoorl/store"
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 const defaultBaseURL = "http://localhost:8080"
@@ -58,6 +59,8 @@ func main() {
 		cmdUpdate(args)
 	case "analytics":
 		cmdAnalytics(args)
+	case "qr":
+		cmdQr(args)
 	case "tui":
 		apiKey := os.Getenv("YOORL_API_KEY")
 		if err := tui.StartTUI(baseURL(), apiKey); err != nil {
@@ -82,6 +85,7 @@ func printUsage() {
 	fmt.Println("  update <short-url> <new-url>")
 	fmt.Println("                           Update a short URL's destination")
 	fmt.Println("  analytics <short-url>  Get click analytics")
+	fmt.Println("  qr <short-url>         Generate QR code")
 	fmt.Println("  tui                   Terminal UI dashboard")
 	fmt.Println()
 	fmt.Println("Environment:")
@@ -315,6 +319,25 @@ func cmdAnalytics(args []string) {
 	if len(data.RecentClicks) == 0 {
 		fmt.Println("    (none)")
 	}
+}
+
+func cmdQr(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "error: short-url is required")
+		fmt.Fprintln(os.Stderr, "Usage: yoorl qr <short-url>")
+		os.Exit(1)
+	}
+
+	shortUrl := strings.TrimLeft(args[0], "/")
+	fullURL := baseURL() + "/r/" + shortUrl
+
+	qr, err := qrcode.New(fullURL, qrcode.Medium)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error generating QR: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(qr.ToSmallString(false))
 }
 
 func doRequest(method, path string, body interface{}) apiResponse {

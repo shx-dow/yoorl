@@ -15,6 +15,7 @@ const (
 	screenList screen = iota
 	screenCreate
 	screenConfirmDelete
+	screenQr
 )
 
 type model struct {
@@ -32,6 +33,8 @@ type model struct {
 	height       int
 	note         string
 	noteUntil    time.Time
+	qrDisplay    string
+	qrURL        string
 }
 
 type urlsLoadedMsg []*store.UrlEntry
