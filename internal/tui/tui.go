@@ -266,7 +266,11 @@ func (m model) View() string {
 
 	var b strings.Builder
 
-	b.WriteString(headerStyle.Render(fmt.Sprintf(" yoorl TUI  (%s)", m.client.BaseURL)))
+	for _, line := range strings.Split(yoorlHeader, "\n") {
+		b.WriteString(headerStyle.Render(line))
+		b.WriteString("\n")
+	}
+	b.WriteString(headerStyle.Render(m.client.BaseURL))
 	b.WriteString("\n\n")
 
 	switch m.screen {

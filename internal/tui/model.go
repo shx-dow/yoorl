@@ -37,6 +37,11 @@ type model struct {
 	qrURL        string
 }
 
+var yoorlHeader = "__  __          ___  __ \n" +
+	"\\ \\/ /__  ___  / _ \\/ / \n" +
+	" \\  / _ \\/ _ \\/ , _/ /__\n" +
+	" /_/\\___/\\___/_/|_/____/"
+
 type urlsLoadedMsg []*store.UrlEntry
 type analyticsLoadedMsg *store.Analytics
 type errMsg error
