@@ -85,9 +85,6 @@ var (
 
 	clickStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("222"))
-
-	borderStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("239"))
 )
 
 func initialModel(client *Client) model {

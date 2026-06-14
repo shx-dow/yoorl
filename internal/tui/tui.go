@@ -110,9 +110,6 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.urls) == 0 {
 			return m, nil
 		}
-		if m.width >= 104 {
-			return m, nil
-		}
 		m.foldOpen = !m.foldOpen
 		if m.foldOpen && m.analytics == nil {
 			return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
@@ -332,9 +329,6 @@ func (m model) renderList() string {
 	if contentWidth <= 0 {
 		contentWidth = 100
 	}
-	if contentWidth >= 104 {
-		return m.renderSplitList(contentWidth)
-	}
 	return m.renderCompactList(contentWidth)
 }
 
@@ -357,22 +351,6 @@ func (m model) renderCompactList(width int) string {
 
 	b.WriteString(m.renderMessages())
 	return b.String()
-}
-
-func (m model) renderSplitList(width int) string {
-	listWidth := width * 62 / 100
-	detailWidth := width - listWidth - 3
-	var rows strings.Builder
-	rows.WriteString(m.renderTableHeader(listWidth))
-	rows.WriteString("\n")
-	for i, u := range m.urls {
-		rows.WriteString(m.renderURLRow(i, u, listWidth))
-		rows.WriteString("\n")
-	}
-
-	detail := m.renderDetailPanel(detailWidth)
-	joined := lipgloss.JoinHorizontal(lipgloss.Top, rows.String(), " "+borderStyle.Render("│")+" ", detail)
-	return joined + m.renderMessages()
 }
 
 func (m model) renderTableHeader(width int) string {
@@ -404,27 +382,21 @@ func (m model) renderURLRow(i int, u *store.UrlEntry, width int) string {
 	return mutedStyle.Render(line)
 }
 
-func (m model) renderDetailPanel(width int) string {
-	if len(m.urls) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString(dimStyle.Render("SELECTED LINK"))
-	b.WriteString("\n\n")
-	if m.analytics == nil {
-		b.WriteString(mutedStyle.Render("Loading analytics…"))
-		return b.String()
-	}
-	b.WriteString(m.renderAnalytics(m.analytics, width, false))
-	return b.String()
-}
-
 func (m model) renderFold() string {
 	a := m.analytics
 	if a == nil {
 		return ""
 	}
-	return "   " + strings.ReplaceAll(m.renderAnalytics(a, maxInt(40, m.width-6), true), "\n", "\n   ") + "\n"
+	width := maxInt(40, m.width-4)
+	content := m.renderAnalytics(a, width-6, true)
+	content = "  " + strings.ReplaceAll(content, "\n", "\n  ")
+	panel := lipgloss.NewStyle().
+		Width(width).
+		Padding(1, 1).
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("252")).
+		Render(content)
+	return "  " + strings.ReplaceAll(panel, "\n", "\n  ") + "\n"
 }
 
 func (m model) renderAnalytics(a *store.Analytics, width int, inline bool) string {
@@ -555,9 +527,6 @@ func (m model) renderQr() string {
 func (m model) renderHelp() string {
 	switch m.screen {
 	case screenList:
-		if m.width >= 104 {
-			return helpStyle.Render(" j/k move  n new  c copy  v QR  d delete  r refresh  q quit  " + m.client.BaseURL)
-		}
 		return helpStyle.Render(" j/k move  enter inspect  n new  c copy  v QR  d delete  r refresh  q quit  " + m.client.BaseURL)
 	case screenCreate:
 		return helpStyle.Render(" [tab] switch field  [enter] create URL  [esc] cancel")
