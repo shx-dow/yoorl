@@ -23,6 +23,7 @@ type model struct {
 	screen       screen
 	urls         []*store.UrlEntry
 	cursor       int
+	foldOpen     bool
 	analytics    *store.Analytics
 	err          error
 	urlInput     textinput.Model
@@ -37,51 +38,56 @@ type model struct {
 	qrURL        string
 }
 
-var yoorlHeader = "__  __          ___  __ \n" +
-	"\\ \\/ /__  ___  / _ \\/ / \n" +
-	" \\  / _ \\/ _ \\/ , _/ /__\n" +
-	" /_/\\___/\\___/_/|_/____/"
-
 type urlsLoadedMsg []*store.UrlEntry
 type analyticsLoadedMsg *store.Analytics
 type errMsg error
 type tickMsg struct{}
 type noteTimeoutMsg struct{}
+type healthCheckedMsg struct{}
 
 var (
-	headerStyle = lipgloss.NewStyle().
+	statsBarStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("33")).
-			Padding(0, 2)
+			Foreground(lipgloss.Color("223"))
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244"))
-
-	detailStyle = lipgloss.NewStyle().Padding(0, 1)
+			Foreground(lipgloss.Color("245"))
 
 	errStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196"))
+			Foreground(lipgloss.Color("203")).
+			Bold(true)
 
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("33"))
+			Foreground(lipgloss.Color("215"))
 
 	selectedStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("33"))
+			Foreground(lipgloss.Color("223")).
+			Background(lipgloss.Color("237"))
 
 	cursorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("33")).
+			Foreground(lipgloss.Color("215")).
 			Bold(true)
 
 	hashStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("220"))
+			Foreground(lipgloss.Color("215"))
 
 	noteStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("46")).
+			Foreground(lipgloss.Color("150")).
 			Bold(true)
+
+	mutedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245"))
+
+	dimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241"))
+
+	clickStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("222"))
+
+	borderStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("239"))
 )
 
 func initialModel(client *Client) model {
@@ -105,9 +111,19 @@ func initialModel(client *Client) model {
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
+		checkHealth(m.client),
 		loadURLs(m.client),
 		tick(),
 	)
+}
+
+func checkHealth(client *Client) tea.Cmd {
+	return func() tea.Msg {
+		if err := client.Health(); err != nil {
+			return errMsg(err)
+		}
+		return healthCheckedMsg{}
+	}
 }
 
 func loadURLs(client *Client) tea.Cmd {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/shx-dow/yoorl/store"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -34,12 +35,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 				return m, tea.Quit
 			}
-	case "esc":
-		m.screen = screenList
-		m.err = nil
-		m.urlInput.Reset()
-		m.aliasInput.Reset()
-		return m, nil
+		case "esc":
+			m.screen = screenList
+			m.err = nil
+			m.urlInput.Reset()
+			m.aliasInput.Reset()
+			return m, nil
 		}
 
 		switch m.screen {
@@ -51,6 +52,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleConfirmDeleteKey(msg)
 		case screenQr:
 			m.screen = screenList
+			m.foldOpen = false
 			return m, nil
 		}
 
@@ -73,7 +75,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = error(msg)
 
 	case tickMsg:
-		cmds = append(cmds, loadURLs(m.client), tick())
+		cmds = append(cmds, checkHealth(m.client), loadURLs(m.client), tick())
 
 	case noteTimeoutMsg:
 		m.note = ""
@@ -88,6 +90,7 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor > 0 {
 			m.cursor--
 		}
+		m.foldOpen = false
 		if len(m.urls) > 0 {
 			m.analytics = nil
 			return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
@@ -97,6 +100,7 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor < len(m.urls)-1 {
 			m.cursor++
 		}
+		m.foldOpen = false
 		if len(m.urls) > 0 {
 			m.analytics = nil
 			return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
@@ -106,8 +110,14 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.urls) == 0 {
 			return m, nil
 		}
-		m.analytics = nil
-		return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
+		if m.width >= 104 {
+			return m, nil
+		}
+		m.foldOpen = !m.foldOpen
+		if m.foldOpen && m.analytics == nil {
+			return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
+		}
+		return m, nil
 
 	case "n":
 		m.screen = screenCreate
@@ -160,6 +170,7 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "g":
 		if len(m.urls) > 0 {
 			m.cursor = 0
+			m.foldOpen = false
 			m.analytics = nil
 			return m, loadAnalytics(m.client, m.urls[0].ShortUrl)
 		}
@@ -167,9 +178,12 @@ func (m model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G":
 		if len(m.urls) > 0 {
 			m.cursor = len(m.urls) - 1
+			m.foldOpen = false
 			m.analytics = nil
 			return m, loadAnalytics(m.client, m.urls[m.cursor].ShortUrl)
 		}
+	case "?":
+		return m, nil
 	}
 
 	return m, nil
@@ -266,20 +280,12 @@ func (m model) View() string {
 
 	var b strings.Builder
 
-	for _, line := range strings.Split(yoorlHeader, "\n") {
-		b.WriteString(headerStyle.Render(line))
-		b.WriteString("\n")
-	}
-	b.WriteString(headerStyle.Render(m.client.BaseURL))
-	b.WriteString("\n\n")
+	b.WriteString(m.renderStatsBar())
+	b.WriteString("\n")
 
 	switch m.screen {
-	case screenCreate:
-		b.WriteString(m.renderCreate())
-	case screenConfirmDelete:
-		b.WriteString(m.renderConfirmDelete())
-	case screenQr:
-		b.WriteString(m.renderQr())
+	case screenCreate, screenConfirmDelete, screenQr:
+		b.WriteString(m.renderOverlay())
 	default:
 		b.WriteString(m.renderList())
 	}
@@ -291,100 +297,214 @@ func (m model) View() string {
 	return b.String()
 }
 
-func (m model) renderList() string {
-	var b strings.Builder
-
-	if len(m.urls) == 0 {
-		b.WriteString(helpStyle.Render(" No URLs yet. Press n to create one."))
-		b.WriteString("\n")
-		return b.String()
+func (m model) renderStatsBar() string {
+	totalClicks := int64(0)
+	for _, u := range m.urls {
+		totalClicks += u.TotalClicks
 	}
 
-	for i, u := range m.urls {
-		dest := u.LongUrl
-		maxDest := m.width - 50
-		if maxDest < 20 {
-			maxDest = 20
-		}
-		if len(dest) > maxDest {
-			dest = dest[:maxDest-3] + "..."
-		}
-
-		fullShort := m.client.BaseURL + "/r/" + u.ShortUrl
-		maxFull := m.width - len(u.ShortUrl) - maxDest - 10
-		if maxFull < 10 {
-			maxFull = 10
-		}
-		if len(fullShort) > maxFull {
-			fullShort = fullShort[:maxFull-3] + "..."
-		}
-
-		line := fmt.Sprintf(" %d. %s  %s  %s",
-			i+1,
-			u.ShortUrl,
-			dest,
-			fullShort,
-		)
-
-		if i == m.cursor {
-			b.WriteString(selectedStyle.Render(line))
-		} else {
-			b.WriteString(line)
-		}
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-
-	if m.note != "" {
-		b.WriteString(noteStyle.Render(" " + m.note))
-		b.WriteString("\n\n")
-	}
-
+	left := statsBarStyle.Render(" YOORL")
+	location := mutedStyle.Render("  links")
+	status := noteStyle.Render("● connected")
 	if m.err != nil {
-		b.WriteString(errStyle.Render(fmt.Sprintf(" Error: %v", m.err)))
-		b.WriteString("\n\n")
+		status = errStyle.Render("! disconnected")
+	}
+	right := fmt.Sprintf("%d URLs  %d clicks  %s", len(m.urls), totalClicks, status)
+	width := m.width
+	if width <= 0 {
+		width = 100
+	}
+	gap := width - lipgloss.Width(left) - lipgloss.Width(location) - lipgloss.Width(right) - 2
+	if gap < 2 {
+		return left + location
+	}
+	return left + location + strings.Repeat(" ", gap) + mutedStyle.Render(right)
+}
+
+func (m model) renderList() string {
+	if len(m.urls) == 0 {
+		return "\n " + titleStyle.Render("No links yet.") + "\n " +
+			mutedStyle.Render("Create a short URL to start tracking visits.") + "\n\n " +
+			noteStyle.Render("n create first link") + "\n"
 	}
 
-	if m.analytics != nil {
-		b.WriteString(detailStyle.Render(m.renderAnalyticsDetail()))
+	contentWidth := m.width
+	if contentWidth <= 0 {
+		contentWidth = 100
+	}
+	if contentWidth >= 104 {
+		return m.renderSplitList(contentWidth)
+	}
+	return m.renderCompactList(contentWidth)
+}
+
+func (m model) renderCompactList(width int) string {
+	var b strings.Builder
+	b.WriteString(m.renderTableHeader(width))
+	b.WriteString("\n")
+	for i, u := range m.urls {
+		b.WriteString(m.renderURLRow(i, u, width))
+		b.WriteString("\n")
+
+		if i == m.cursor && m.foldOpen {
+			if m.analytics != nil && m.analytics.ShortUrl == u.ShortUrl {
+				b.WriteString(m.renderFold())
+			} else if m.analytics == nil {
+				b.WriteString("   Loading analytics...\n")
+			}
+		}
 	}
 
+	b.WriteString(m.renderMessages())
 	return b.String()
 }
 
-func (m model) renderAnalyticsDetail() string {
+func (m model) renderSplitList(width int) string {
+	listWidth := width * 62 / 100
+	detailWidth := width - listWidth - 3
+	var rows strings.Builder
+	rows.WriteString(m.renderTableHeader(listWidth))
+	rows.WriteString("\n")
+	for i, u := range m.urls {
+		rows.WriteString(m.renderURLRow(i, u, listWidth))
+		rows.WriteString("\n")
+	}
+
+	detail := m.renderDetailPanel(detailWidth)
+	joined := lipgloss.JoinHorizontal(lipgloss.Top, rows.String(), " "+borderStyle.Render("│")+" ", detail)
+	return joined + m.renderMessages()
+}
+
+func (m model) renderTableHeader(width int) string {
+	if width < 70 {
+		return dimStyle.Render(fmt.Sprintf(" %-3s %-16s %-*s %6s", "#", "ALIAS", maxInt(12, width-31), "DESTINATION", "CLICKS"))
+	}
+	return dimStyle.Render(fmt.Sprintf(" %-3s %-16s %-*s %8s", "#", "ALIAS", width-35, "DESTINATION", "CLICKS"))
+}
+
+func (m model) renderURLRow(i int, u *store.UrlEntry, width int) string {
+	aliasWidth := 16
+	destWidth := width - 35
+	clickWidth := 8
+	if width < 70 {
+		aliasWidth = 16
+		destWidth = maxInt(12, width-35)
+		clickWidth = 6
+	}
+	alias := truncate(u.ShortUrl, aliasWidth)
+	dest := truncate(u.LongUrl, destWidth)
+	marker := " "
+	if i == m.cursor {
+		marker = "›"
+	}
+	line := fmt.Sprintf("%s%-3d %-*s %-*s %*d", marker, i+1, aliasWidth, alias, destWidth, dest, clickWidth, u.TotalClicks)
+	if i == m.cursor {
+		return selectedStyle.Width(width).Render(line)
+	}
+	return mutedStyle.Render(line)
+}
+
+func (m model) renderDetailPanel(width int) string {
+	if len(m.urls) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(dimStyle.Render("SELECTED LINK"))
+	b.WriteString("\n\n")
+	if m.analytics == nil {
+		b.WriteString(mutedStyle.Render("Loading analytics…"))
+		return b.String()
+	}
+	b.WriteString(m.renderAnalytics(m.analytics, width, false))
+	return b.String()
+}
+
+func (m model) renderFold() string {
 	a := m.analytics
+	if a == nil {
+		return ""
+	}
+	return "   " + strings.ReplaceAll(m.renderAnalytics(a, maxInt(40, m.width-6), true), "\n", "\n   ") + "\n"
+}
 
-	separator := strings.Repeat("─", m.width-4)
-	if separator == "" {
-		separator = "────────────────"
+func (m model) renderAnalytics(a *store.Analytics, width int, inline bool) string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(a.ShortUrl))
+	b.WriteString("  ")
+	b.WriteString(clickStyle.Render(fmt.Sprintf("%d clicks", a.TotalClicks)))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("short URL  "))
+	b.WriteString(mutedStyle.Render(truncate(m.client.BaseURL+"/r/"+a.ShortUrl, width-11)))
+	if len(a.RecentClicks) == 0 {
+		b.WriteString("\n\n")
+		b.WriteString(dimStyle.Render("No visits recorded yet."))
+		return b.String()
+	}
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("RECENT VISITS"))
+	b.WriteString("\n")
+	maxShow := 5
+	if inline {
+		maxShow = 3
+	}
+	if len(a.RecentClicks) < maxShow {
+		maxShow = len(a.RecentClicks)
+	}
+	for _, c := range a.RecentClicks[:maxShow] {
+		visit := fmt.Sprintf("%s  %-15s  %s", c.Timestamp.Format("01-02 15:04"), c.IP, c.UserAgent)
+		b.WriteString(mutedStyle.Render(truncate(visit, width)))
+		b.WriteString("\n")
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+func (m model) renderMessages() string {
+	var b strings.Builder
+	if m.note != "" {
+		b.WriteString("\n ")
+		b.WriteString(noteStyle.Render("✓ " + m.note))
+		b.WriteString("\n")
+	}
+	if m.err != nil {
+		b.WriteString("\n ")
+		b.WriteString(errStyle.Render(fmt.Sprintf("! %v", m.err)))
+		b.WriteString(mutedStyle.Render("  r retry"))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func (m model) renderOverlay() string {
+	var content string
+	switch m.screen {
+	case screenCreate:
+		content = m.renderCreate()
+	case screenConfirmDelete:
+		content = m.renderConfirmDelete()
+	case screenQr:
+		content = m.renderQr()
+	default:
+		return ""
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(" %s\n", separator))
-	sb.WriteString(titleStyle.Render(fmt.Sprintf(" %s", a.ShortUrl)))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(" Full URL: %s\n", m.client.BaseURL+"/r/"+a.ShortUrl))
-	sb.WriteString(fmt.Sprintf(" Total clicks: %d\n\n", a.TotalClicks))
+	lines := strings.Split(content, "\n")
+	contentH := len(lines)
 
-	if a.TotalClicks > 0 {
-		sb.WriteString(" Recent visits:\n")
-		maxShow := 5
-		if len(a.RecentClicks) < maxShow {
-			maxShow = len(a.RecentClicks)
-		}
-		for _, c := range a.RecentClicks[:maxShow] {
-			ua := c.UserAgent
-			if len(ua) > 40 {
-				ua = ua[:40] + "..."
-			}
-			ts := c.Timestamp.Format("2006-01-02 15:04:05")
-			sb.WriteString(fmt.Sprintf("   %s | %-15s | %s\n", ts, c.IP, ua))
-		}
+	barH := 2
+	helpH := 2
+	availH := m.height - barH - helpH
+	if availH < 0 {
+		availH = 10
+	}
+	topPad := (availH - contentH) / 2
+	if topPad < 0 {
+		topPad = 0
 	}
 
-	return sb.String()
+	var b strings.Builder
+	b.WriteString(strings.Repeat("\n", topPad))
+	b.WriteString(content)
+	return b.String()
 }
 
 func (m model) renderCreate() string {
@@ -406,7 +526,6 @@ func (m model) renderCreate() string {
 	b.WriteString(" " + aliasLabel + "\n\n")
 	b.WriteString("  " + m.aliasInput.View() + "\n\n")
 
-	b.WriteString(helpStyle.Render(" [tab] switch  [enter] create  [esc] cancel"))
 	return b.String()
 }
 
@@ -416,10 +535,11 @@ func (m model) renderConfirmDelete() string {
 	}
 	u := m.urls[m.cursor]
 	var b strings.Builder
-	b.WriteString(errStyle.Render(" Delete confirmation"))
+	b.WriteString(errStyle.Render(" Delete link?"))
 	b.WriteString("\n\n")
-	b.WriteString(fmt.Sprintf(" Delete %s → %s?\n\n", u.ShortUrl, u.LongUrl))
-	b.WriteString(helpStyle.Render(" [y] yes  [any other key] cancel"))
+	b.WriteString(fmt.Sprintf(" %s\n", titleStyle.Render(u.ShortUrl)))
+	b.WriteString(" " + mutedStyle.Render(truncate(u.LongUrl, maxInt(30, m.width-4))) + "\n\n")
+	b.WriteString(" " + mutedStyle.Render("Click history will be removed. This cannot be undone.") + "\n")
 	return b.String()
 }
 
@@ -428,14 +548,44 @@ func (m model) renderQr() string {
 	b.WriteString(titleStyle.Render(" QR Code"))
 	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf(" %s\n\n", m.qrURL))
-	b.WriteString(" " + strings.ReplaceAll(m.qrDisplay, "\n", "\n ") + "\n\n")
-	b.WriteString(helpStyle.Render(" [esc] back"))
+	b.WriteString(" " + strings.ReplaceAll(m.qrDisplay, "\n", "\n ") + "\n")
 	return b.String()
 }
 
 func (m model) renderHelp() string {
-	if m.screen == screenList {
-		return helpStyle.Render(" [↑/↓] navigate  [enter] analytics  [n] new  [d] delete  [c] copy  [v] qr  [r] refresh  [q] quit")
+	switch m.screen {
+	case screenList:
+		if m.width >= 104 {
+			return helpStyle.Render(" j/k move  n new  c copy  v QR  d delete  r refresh  q quit  " + m.client.BaseURL)
+		}
+		return helpStyle.Render(" j/k move  enter inspect  n new  c copy  v QR  d delete  r refresh  q quit  " + m.client.BaseURL)
+	case screenCreate:
+		return helpStyle.Render(" [tab] switch field  [enter] create URL  [esc] cancel")
+	case screenConfirmDelete:
+		return helpStyle.Render(" [y] confirm delete  [any other key] cancel")
+	case screenQr:
+		return helpStyle.Render(" [esc] back")
 	}
 	return ""
+}
+
+func truncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= width {
+		return s
+	}
+	if width <= 3 {
+		return string(runes[:width])
+	}
+	return string(runes[:width-3]) + "..."
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
