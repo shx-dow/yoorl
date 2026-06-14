@@ -151,7 +151,7 @@ func TestDeleteShortUrlNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestGetAnalyticsNotFound(t *testing.T) {

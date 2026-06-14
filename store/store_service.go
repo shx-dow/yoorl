@@ -140,7 +140,11 @@ func (s *RedisStore) RetrieveInitialUrl(shortUrl string) (string, error) {
 	result, err := s.redisClient.Get(ctx, shortUrl).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return "", fmt.Errorf("short URL %s not found", shortUrl)
+			meta, metaErr := s.redisClient.HGetAll(ctx, fmt.Sprintf(urlMetaKey, shortUrl)).Result()
+			if metaErr != nil || len(meta) == 0 {
+				return "", fmt.Errorf("short URL %s not found", shortUrl)
+			}
+			return meta["long_url"], nil
 		}
 		return "", fmt.Errorf("failed to retrieve short URL %s: %w", shortUrl, err)
 	}
