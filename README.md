@@ -79,7 +79,7 @@ yoorl tui                       Open TUI dashboard
 | `REDIS_PASSWORD` | Redis password           | (empty)                    |
 | `API_KEYS`       | Auth keys (`key:user`)   | (none — auth disabled)     |
 | `YOORL_BASE_URL` | API URL for CLI/TUI      | `http://localhost:8080`    |
-| `YOORL_API_KEY`  | API key for CLI/TUI      | (none)                     |
+| `YOORL_API_KEY`  | API key sent by CLI/TUI (key only) | (none)             |
 
 ## Architecture
 

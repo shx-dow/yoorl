@@ -90,7 +90,7 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Environment:")
 	fmt.Println("  YOORL_BASE_URL    API base URL (default: http://localhost:8080)")
-	fmt.Println("  YOORL_API_KEY     API key for authentication (format: key:user)")
+	fmt.Println("  YOORL_API_KEY     API key for authentication (key only)")
 	fmt.Println("  PORT              Server port (default: 8080)")
 }
 

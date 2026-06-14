@@ -21,9 +21,29 @@ type Client struct {
 func NewClient(baseURL, apiKey string) *Client {
 	return &Client{
 		BaseURL: strings.TrimRight(baseURL, "/"),
-		APIKey:  apiKey,
+		APIKey:  normalizeAPIKey(apiKey),
 		http:    &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+func normalizeAPIKey(apiKey string) string {
+	apiKey = strings.TrimSpace(apiKey)
+	if key, _, ok := strings.Cut(apiKey, ":"); ok {
+		return key
+	}
+	return apiKey
+}
+
+func (c *Client) Health() error {
+	resp, err := c.http.Get(c.BaseURL + "/health")
+	if err != nil {
+		return fmt.Errorf("connect to %s: %w", c.BaseURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("connect to %s: health check returned HTTP %d", c.BaseURL, resp.StatusCode)
+	}
+	return nil
 }
 
 type apiResponse struct {
