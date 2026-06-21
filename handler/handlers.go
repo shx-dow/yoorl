@@ -110,7 +110,8 @@ type updateUrlRequest struct {
 func UpdateShortUrl(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
 
-	if _, err := store.RetrieveInitialUrl(shortUrl); err != nil {
+	existing, err := store.RetrieveUrlEntry(shortUrl)
+	if err != nil {
 		notFound(c, "short URL not found")
 		return
 	}
@@ -126,7 +127,7 @@ func UpdateShortUrl(c *gin.Context) {
 		return
 	}
 
-	if err := store.SaveUrlMapping(shortUrl, req.LongUrl, ""); err != nil {
+	if err := store.SaveUrlMapping(shortUrl, req.LongUrl, existing.UserId); err != nil {
 		internalError(c, "failed to update short URL")
 		return
 	}

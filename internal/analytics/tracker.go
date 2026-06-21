@@ -1,6 +1,8 @@
 package analytics
 
 import (
+	"sync/atomic"
+
 	"github.com/rs/zerolog"
 	"github.com/shx-dow/yoorl/store"
 )
@@ -11,8 +13,10 @@ type clickTask struct {
 }
 
 type Tracker struct {
-	events chan clickTask
-	done   chan struct{}
+	events      chan clickTask
+	done        chan struct{}
+	dropped     atomic.Int64
+	processed   atomic.Int64
 }
 
 func NewTracker() *Tracker {
@@ -28,10 +32,11 @@ func (t *Tracker) Start(log zerolog.Logger) {
 			if err := store.RecordClick(task.ShortUrl, task.Event); err != nil {
 				log.Error().Err(err).Str("short_url", task.ShortUrl).Msg("failed to record click")
 			}
+			t.processed.Add(1)
 		}
 		close(t.done)
 	}()
-	log.Info().Msg("analytics tracker started")
+	log.Info().Int("buffer", cap(t.events)).Msg("analytics tracker started")
 }
 
 func (t *Tracker) Stop() {
@@ -43,5 +48,10 @@ func (t *Tracker) Track(shortUrl string, event store.ClickEvent) {
 	select {
 	case t.events <- clickTask{ShortUrl: shortUrl, Event: event}:
 	default:
+		t.dropped.Add(1)
 	}
+}
+
+func (t *Tracker) Stats() (dropped, processed int64) {
+	return t.dropped.Load(), t.processed.Load()
 }

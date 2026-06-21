@@ -71,6 +71,16 @@ func (m *MemoryStore) RetrieveInitialUrl(shortUrl string) (string, error) {
 	return original, nil
 }
 
+func (m *MemoryStore) RetrieveUrlEntry(shortUrl string) (*UrlEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	entry, ok := m.entries[shortUrl]
+	if !ok {
+		return nil, fmt.Errorf("short URL %s not found", shortUrl)
+	}
+	return entry, nil
+}
+
 func (m *MemoryStore) DeleteUrlMapping(shortUrl string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

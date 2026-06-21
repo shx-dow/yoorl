@@ -37,6 +37,7 @@ type Store interface {
 	CreateUrlMapping(shortUrl string, originalUrl string, userId string) error
 	SaveUrlMapping(shortUrl string, originalUrl string, userId string) error
 	RetrieveInitialUrl(shortUrl string) (string, error)
+	RetrieveUrlEntry(shortUrl string) (*UrlEntry, error)
 	DeleteUrlMapping(shortUrl string) error
 	RecordClick(shortUrl string, event ClickEvent) error
 	GetAnalytics(shortUrl string) (*Analytics, error)
@@ -98,6 +99,10 @@ func SaveUrlMapping(shortUrl string, originalUrl string, userId string) error {
 
 func RetrieveInitialUrl(shortUrl string) (string, error) {
 	return defaultStore.RetrieveInitialUrl(shortUrl)
+}
+
+func RetrieveUrlEntry(shortUrl string) (*UrlEntry, error) {
+	return defaultStore.RetrieveUrlEntry(shortUrl)
 }
 
 func DeleteUrlMapping(shortUrl string) error {
@@ -179,6 +184,21 @@ func (s *RedisStore) RetrieveInitialUrl(shortUrl string) (string, error) {
 		return "", fmt.Errorf("failed to retrieve short URL %s: %w", shortUrl, err)
 	}
 	return result, nil
+}
+
+func (s *RedisStore) RetrieveUrlEntry(shortUrl string) (*UrlEntry, error) {
+	meta, err := s.redisClient.HGetAll(ctx, fmt.Sprintf(urlMetaKey, shortUrl)).Result()
+	if err != nil || len(meta) == 0 {
+		return nil, fmt.Errorf("short URL %s not found", shortUrl)
+	}
+
+	createdAt, _ := time.Parse(time.RFC3339, meta["created_at"])
+	return &UrlEntry{
+		ShortUrl:  shortUrl,
+		LongUrl:   meta["long_url"],
+		UserId:    meta["user_id"],
+		CreatedAt: createdAt,
+	}, nil
 }
 
 func (s *RedisStore) DeleteUrlMapping(shortUrl string) error {

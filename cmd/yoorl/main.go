@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,25 +15,23 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/shx-dow/yoorl/handler"
 	"github.com/shx-dow/yoorl/internal/analytics"
+	"github.com/shx-dow/yoorl/internal/client"
 	"github.com/shx-dow/yoorl/internal/middleware"
 	"github.com/shx-dow/yoorl/internal/tui"
-	"github.com/shx-dow/yoorl/store"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
 const defaultBaseURL = "http://localhost:8080"
-
-type apiResponse struct {
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data"`
-	Error   string          `json:"error"`
-}
 
 func baseURL() string {
 	if v := os.Getenv("YOORL_BASE_URL"); v != "" {
 		return strings.TrimRight(v, "/")
 	}
 	return defaultBaseURL
+}
+
+func newClient() *client.Client {
+	return client.New(baseURL(), os.Getenv("YOORL_API_KEY"))
 }
 
 func main() {
@@ -115,6 +110,7 @@ func runServer() {
 	handler.SetTracker(tracker)
 
 	limiter := middleware.NewTokenBucket(100, 50)
+	limiter.Start()
 
 	r := gin.New()
 	r.Use(
@@ -165,13 +161,13 @@ func runServer() {
 		log.Fatal().Err(err).Msg("server forced to shutdown")
 	}
 
+	limiter.Stop()
 	tracker.Stop()
 	log.Info().Msg("server exited")
 }
 
 func cmdCreate(args []string) {
-	var aliasVal, userVal, target string
-	userVal = "cli"
+	var aliasVal, target string
 
 	for i := 0; i < len(args); i++ {
 		switch {
@@ -185,16 +181,8 @@ func cmdCreate(args []string) {
 				i++
 				aliasVal = args[i]
 			}
-		case args[i] == "--user" || args[i] == "-user":
-			if i+1 < len(args) {
-				i++
-				userVal = args[i]
-			}
-		case args[i] == "-u":
-			if i+1 < len(args) {
-				i++
-				userVal = args[i]
-			}
+		case args[i] == "--user" || args[i] == "-user", args[i] == "-u":
+			i++
 		default:
 			if target == "" {
 				target = args[i]
@@ -208,27 +196,13 @@ func cmdCreate(args []string) {
 		os.Exit(1)
 	}
 
-	body := map[string]string{
-		"long_url": target,
-		"user_id":  userVal,
-	}
-	if aliasVal != "" {
-		body["custom_alias"] = aliasVal
-	}
-
-	resp := doRequest("POST", "/v1/urls", body)
-	if resp.Error != "" {
-		fmt.Fprintf(os.Stderr, "error: %s\n", resp.Error)
+	created, err := newClient().CreateURL(target, aliasVal, "cli")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		os.Exit(1)
 	}
 
-	var data struct {
-		ShortUrl string `json:"short_url"`
-		LongUrl  string `json:"long_url"`
-	}
-	json.Unmarshal(resp.Data, &data)
-
-	fmt.Printf("Created: %s -> %s\n", data.ShortUrl, data.LongUrl)
+	fmt.Printf("Created: %s -> %s\n", created.ShortURL, created.LongURL)
 }
 
 func cmdDelete(args []string) {
@@ -239,9 +213,8 @@ func cmdDelete(args []string) {
 	}
 
 	shortUrl := strings.TrimLeft(args[0], "/")
-	resp := doRequest("DELETE", "/v1/urls/"+shortUrl, nil)
-	if resp.Error != "" {
-		fmt.Fprintf(os.Stderr, "error: %s\n", resp.Error)
+	if err := newClient().DeleteURL(shortUrl); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -263,20 +236,13 @@ func cmdUpdate(args []string) {
 		os.Exit(1)
 	}
 
-	body := map[string]string{"long_url": newUrl}
-	resp := doRequest("PUT", "/v1/urls/"+shortUrl, body)
-	if resp.Error != "" {
-		fmt.Fprintf(os.Stderr, "error: %s\n", resp.Error)
+	updated, err := newClient().UpdateURL(shortUrl, newUrl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		os.Exit(1)
 	}
 
-	var data struct {
-		ShortUrl string `json:"short_url"`
-		LongUrl  string `json:"long_url"`
-	}
-	json.Unmarshal(resp.Data, &data)
-
-	fmt.Printf("Updated: %s -> %s\n", data.ShortUrl, data.LongUrl)
+	fmt.Printf("Updated: %s -> %s\n", updated.ShortURL, updated.LongURL)
 }
 
 func cmdAnalytics(args []string) {
@@ -287,28 +253,16 @@ func cmdAnalytics(args []string) {
 	}
 
 	shortUrl := strings.TrimLeft(args[0], "/")
-	resp := doRequest("GET", "/v1/urls/"+shortUrl+"/analytics", nil)
-	if resp.Error != "" {
-		fmt.Fprintf(os.Stderr, "error: %s\n", resp.Error)
+	stats, err := newClient().GetAnalytics(shortUrl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		os.Exit(1)
 	}
 
-	var data struct {
-		ShortUrl     string `json:"short_url"`
-		TotalClicks  int64  `json:"total_clicks"`
-		RecentClicks []struct {
-			Timestamp time.Time `json:"timestamp"`
-			IP        string    `json:"ip"`
-			UserAgent string    `json:"user_agent"`
-			Referer   string    `json:"referer"`
-		} `json:"recent_clicks"`
-	}
-	json.Unmarshal(resp.Data, &data)
-
-	fmt.Printf("Analytics for %s:\n", data.ShortUrl)
-	fmt.Printf("  Total clicks: %d\n", data.TotalClicks)
+	fmt.Printf("Analytics for %s:\n", stats.ShortUrl)
+	fmt.Printf("  Total clicks: %d\n", stats.TotalClicks)
 	fmt.Println("  Recent visits:")
-	for _, c := range data.RecentClicks {
+	for _, c := range stats.RecentClicks {
 		fmt.Printf("    %s | %s | %s | %s\n",
 			c.Timestamp.Format(time.RFC3339),
 			c.IP,
@@ -316,7 +270,7 @@ func cmdAnalytics(args []string) {
 			c.Referer,
 		)
 	}
-	if len(data.RecentClicks) == 0 {
+	if len(stats.RecentClicks) == 0 {
 		fmt.Println("    (none)")
 	}
 }
@@ -338,43 +292,6 @@ func cmdQr(args []string) {
 	}
 
 	fmt.Println(qr.ToSmallString(false))
-}
-
-func doRequest(method, path string, body interface{}) apiResponse {
-	url := baseURL() + path
-
-	var reqBody io.Reader
-	if body != nil {
-		data, _ := json.Marshal(body)
-		reqBody = bytes.NewReader(data)
-	}
-
-	req, _ := http.NewRequest(method, url, reqBody)
-	req.Header.Set("Content-Type", "application/json")
-
-	apiKey := os.Getenv("YOORL_API_KEY")
-	if apiKey != "" {
-		req.Header.Set("X-API-Key", apiKey)
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-
-	var apiResp apiResponse
-	json.Unmarshal(respBody, &apiResp)
-
-	if resp.StatusCode >= 400 && apiResp.Error == "" {
-		apiResp.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
-	}
-
-	return apiResp
 }
 
 func truncate(s string, n int) string {
