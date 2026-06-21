@@ -25,7 +25,9 @@ func NewTracker() *Tracker {
 func (t *Tracker) Start(log zerolog.Logger) {
 	go func() {
 		for task := range t.events {
-			store.RecordClick(task.ShortUrl, task.Event)
+			if err := store.RecordClick(task.ShortUrl, task.Event); err != nil {
+				log.Error().Err(err).Str("short_url", task.ShortUrl).Msg("failed to record click")
+			}
 		}
 		close(t.done)
 	}()

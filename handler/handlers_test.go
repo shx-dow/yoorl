@@ -246,8 +246,8 @@ func TestGetAnalyticsWithClicks(t *testing.T) {
 	shortUrl := data["short_url"].(string)
 	shortUrl = shortUrl[strings.LastIndex(shortUrl, "/r/")+3:]
 
-	store.RecordClick(shortUrl, store.ClickEvent{})
-	store.RecordClick(shortUrl, store.ClickEvent{})
+	_ = store.RecordClick(shortUrl, store.ClickEvent{})
+	_ = store.RecordClick(shortUrl, store.ClickEvent{})
 
 	req2 := httptest.NewRequest(http.MethodGet, "/v1/urls/"+shortUrl+"/analytics", nil)
 	w2 := httptest.NewRecorder()

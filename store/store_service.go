@@ -34,10 +34,11 @@ type UrlEntry struct {
 }
 
 type Store interface {
-	SaveUrlMapping(shortUrl string, originalUrl string, userId string)
+	CreateUrlMapping(shortUrl string, originalUrl string, userId string) error
+	SaveUrlMapping(shortUrl string, originalUrl string, userId string) error
 	RetrieveInitialUrl(shortUrl string) (string, error)
-	DeleteUrlMapping(shortUrl string)
-	RecordClick(shortUrl string, event ClickEvent)
+	DeleteUrlMapping(shortUrl string) error
+	RecordClick(shortUrl string, event ClickEvent) error
 	GetAnalytics(shortUrl string) (*Analytics, error)
 	ListUrls(userId string) ([]*UrlEntry, error)
 }
@@ -87,20 +88,24 @@ func InitializeStore() error {
 	return nil
 }
 
-func SaveUrlMapping(shortUrl string, originalUrl string, userId string) {
-	defaultStore.SaveUrlMapping(shortUrl, originalUrl, userId)
+func CreateUrlMapping(shortUrl string, originalUrl string, userId string) error {
+	return defaultStore.CreateUrlMapping(shortUrl, originalUrl, userId)
+}
+
+func SaveUrlMapping(shortUrl string, originalUrl string, userId string) error {
+	return defaultStore.SaveUrlMapping(shortUrl, originalUrl, userId)
 }
 
 func RetrieveInitialUrl(shortUrl string) (string, error) {
 	return defaultStore.RetrieveInitialUrl(shortUrl)
 }
 
-func DeleteUrlMapping(shortUrl string) {
-	defaultStore.DeleteUrlMapping(shortUrl)
+func DeleteUrlMapping(shortUrl string) error {
+	return defaultStore.DeleteUrlMapping(shortUrl)
 }
 
-func RecordClick(shortUrl string, event ClickEvent) {
-	defaultStore.RecordClick(shortUrl, event)
+func RecordClick(shortUrl string, event ClickEvent) error {
+	return defaultStore.RecordClick(shortUrl, event)
 }
 
 func GetAnalytics(shortUrl string) (*Analytics, error) {
@@ -111,7 +116,31 @@ func ListUrls(userId string) ([]*UrlEntry, error) {
 	return defaultStore.ListUrls(userId)
 }
 
-func (s *RedisStore) SaveUrlMapping(shortUrl string, originalUrl string, userId string) {
+func (s *RedisStore) CreateUrlMapping(shortUrl string, originalUrl string, userId string) error {
+	ok, err := s.redisClient.SetNX(ctx, shortUrl, originalUrl, CacheDuration).Result()
+	if err != nil {
+		return fmt.Errorf("failed to create short URL %s: %w", shortUrl, err)
+	}
+	if !ok {
+		return fmt.Errorf("short URL %s already exists", shortUrl)
+	}
+
+	meta := map[string]string{
+		"long_url":   originalUrl,
+		"user_id":    userId,
+		"created_at": time.Now().Format(time.RFC3339),
+	}
+	if _, err := s.redisClient.HSet(ctx, fmt.Sprintf(urlMetaKey, shortUrl), meta).Result(); err != nil {
+		return fmt.Errorf("failed to save metadata for %s: %w", shortUrl, err)
+	}
+	if _, err := s.redisClient.SAdd(ctx, urlIndexKey, shortUrl).Result(); err != nil {
+		return fmt.Errorf("failed to index short URL %s: %w", shortUrl, err)
+	}
+
+	return nil
+}
+
+func (s *RedisStore) SaveUrlMapping(shortUrl string, originalUrl string, userId string) error {
 	pipe := s.redisClient.Pipeline()
 
 	pipe.Set(ctx, shortUrl, originalUrl, CacheDuration)
@@ -132,8 +161,9 @@ func (s *RedisStore) SaveUrlMapping(shortUrl string, originalUrl string, userId 
 
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		panic(fmt.Sprintf("Failed saving url mapping | Error: %v - shortUrl: %s\n", err, shortUrl))
+		return fmt.Errorf("failed saving url mapping: %w", err)
 	}
+	return nil
 }
 
 func (s *RedisStore) RetrieveInitialUrl(shortUrl string) (string, error) {
@@ -151,7 +181,7 @@ func (s *RedisStore) RetrieveInitialUrl(shortUrl string) (string, error) {
 	return result, nil
 }
 
-func (s *RedisStore) DeleteUrlMapping(shortUrl string) {
+func (s *RedisStore) DeleteUrlMapping(shortUrl string) error {
 	pipe := s.redisClient.Pipeline()
 	pipe.Del(ctx, shortUrl)
 	pipe.Del(ctx, fmt.Sprintf(urlMetaKey, shortUrl))
@@ -160,14 +190,15 @@ func (s *RedisStore) DeleteUrlMapping(shortUrl string) {
 	pipe.Del(ctx, fmt.Sprintf(analyticsListKey, shortUrl))
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		panic(fmt.Sprintf("Failed deleting url mapping | Error: %v - shortUrl: %s\n", err, shortUrl))
+		return fmt.Errorf("failed deleting url mapping: %w", err)
 	}
+	return nil
 }
 
-func (s *RedisStore) RecordClick(shortUrl string, event ClickEvent) {
+func (s *RedisStore) RecordClick(shortUrl string, event ClickEvent) error {
 	data, err := json.Marshal(event)
 	if err != nil {
-		return
+		return fmt.Errorf("failed to marshal click event: %w", err)
 	}
 
 	listKey := fmt.Sprintf(analyticsListKey, shortUrl)
@@ -179,7 +210,11 @@ func (s *RedisStore) RecordClick(shortUrl string, event ClickEvent) {
 	pipe.Incr(ctx, countKey)
 	pipe.Expire(ctx, listKey, CacheDuration)
 	pipe.Expire(ctx, countKey, CacheDuration)
-	_, _ = pipe.Exec(ctx)
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to record click: %w", err)
+	}
+	return nil
 }
 
 func (s *RedisStore) GetAnalytics(shortUrl string) (*Analytics, error) {

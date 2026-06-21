@@ -13,7 +13,8 @@ func TestMemoryStoreInsertionAndRetrieval(t *testing.T) {
 	userUUID := "1234"
 	shortUrl := "abcd"
 
-	SaveUrlMapping(shortUrl, initialLink, userUUID)
+	err := SaveUrlMapping(shortUrl, initialLink, userUUID)
+	assert.Nil(t, err)
 
 	retrievedUrl, err := RetrieveInitialUrl(shortUrl)
 
@@ -32,8 +33,8 @@ func TestMemoryStoreMissingUrl(t *testing.T) {
 func TestMemoryStoreDelete(t *testing.T) {
 	SetStore(NewMemoryStore())
 
-	SaveUrlMapping("abc", "https://example.com", "user1")
-	DeleteUrlMapping("abc")
+	assert.Nil(t, SaveUrlMapping("abc", "https://example.com", "user1"))
+	assert.Nil(t, DeleteUrlMapping("abc"))
 
 	_, err := RetrieveInitialUrl("abc")
 	assert.Error(t, err)
@@ -42,14 +43,14 @@ func TestMemoryStoreDelete(t *testing.T) {
 func TestMemoryStoreAnalytics(t *testing.T) {
 	SetStore(NewMemoryStore())
 
-	SaveUrlMapping("abc", "https://example.com", "user1")
+	assert.Nil(t, SaveUrlMapping("abc", "https://example.com", "user1"))
 
 	stats, err := GetAnalytics("abc")
 	assert.Nil(t, err)
 	assert.Equal(t, int64(0), stats.TotalClicks)
 
-	RecordClick("abc", ClickEvent{IP: "1.2.3.4"})
-	RecordClick("abc", ClickEvent{IP: "5.6.7.8"})
+	assert.Nil(t, RecordClick("abc", ClickEvent{IP: "1.2.3.4"}))
+	assert.Nil(t, RecordClick("abc", ClickEvent{IP: "5.6.7.8"}))
 
 	stats, err = GetAnalytics("abc")
 	assert.Nil(t, err)
@@ -61,10 +62,10 @@ func TestMemoryStoreAnalytics(t *testing.T) {
 func TestMemoryStoreAnalyticsDeleteClearsClicks(t *testing.T) {
 	SetStore(NewMemoryStore())
 
-	SaveUrlMapping("abc", "https://example.com", "user1")
-	RecordClick("abc", ClickEvent{IP: "1.2.3.4"})
+	assert.Nil(t, SaveUrlMapping("abc", "https://example.com", "user1"))
+	assert.Nil(t, RecordClick("abc", ClickEvent{IP: "1.2.3.4"}))
 
-	DeleteUrlMapping("abc")
+	assert.Nil(t, DeleteUrlMapping("abc"))
 
 	stats, err := GetAnalytics("abc")
 	assert.Nil(t, err)

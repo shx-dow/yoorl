@@ -22,7 +22,25 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (m *MemoryStore) SaveUrlMapping(shortUrl string, originalUrl string, userId string) {
+func (m *MemoryStore) CreateUrlMapping(shortUrl string, originalUrl string, userId string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.data[shortUrl]; ok {
+		return fmt.Errorf("short URL %s already exists", shortUrl)
+	}
+
+	m.data[shortUrl] = originalUrl
+	m.entries[shortUrl] = &UrlEntry{
+		ShortUrl:  shortUrl,
+		LongUrl:   originalUrl,
+		UserId:    userId,
+		CreatedAt: time.Now(),
+	}
+	return nil
+}
+
+func (m *MemoryStore) SaveUrlMapping(shortUrl string, originalUrl string, userId string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -40,6 +58,7 @@ func (m *MemoryStore) SaveUrlMapping(shortUrl string, originalUrl string, userId
 		existing.LongUrl = originalUrl
 		existing.UserId = userId
 	}
+	return nil
 }
 
 func (m *MemoryStore) RetrieveInitialUrl(shortUrl string) (string, error) {
@@ -52,21 +71,23 @@ func (m *MemoryStore) RetrieveInitialUrl(shortUrl string) (string, error) {
 	return original, nil
 }
 
-func (m *MemoryStore) DeleteUrlMapping(shortUrl string) {
+func (m *MemoryStore) DeleteUrlMapping(shortUrl string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.data, shortUrl)
 	delete(m.entries, shortUrl)
 	delete(m.clicks, shortUrl)
+	return nil
 }
 
-func (m *MemoryStore) RecordClick(shortUrl string, event ClickEvent) {
+func (m *MemoryStore) RecordClick(shortUrl string, event ClickEvent) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.clicks[shortUrl] = append([]ClickEvent{event}, m.clicks[shortUrl]...)
 	if len(m.clicks[shortUrl]) > 100 {
 		m.clicks[shortUrl] = m.clicks[shortUrl][:100]
 	}
+	return nil
 }
 
 func (m *MemoryStore) GetAnalytics(shortUrl string) (*Analytics, error) {

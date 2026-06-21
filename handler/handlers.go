@@ -47,24 +47,29 @@ func CreateShortUrl(c *gin.Context) {
 			return
 		}
 
-		if existing, _ := store.RetrieveInitialUrl(req.CustomAlias); existing != "" {
+		if err := store.CreateUrlMapping(req.CustomAlias, req.LongUrl, req.UserId); err != nil {
 			conflict(c, "custom alias already in use")
 			return
 		}
 		shortUrl = req.CustomAlias
 	} else {
 		shortUrl = shortener.GenerateShortLink(req.LongUrl, req.UserId)
+		if err := store.SaveUrlMapping(shortUrl, req.LongUrl, req.UserId); err != nil {
+			internalError(c, "failed to save short URL")
+			return
+		}
 	}
 
-	store.SaveUrlMapping(shortUrl, req.LongUrl, req.UserId)
-
-	host := os.Getenv("BASE_URL")
+	host := os.Getenv("YOORL_BASE_URL")
 	if host == "" {
-		host = "http://localhost:8080/"
+		host = os.Getenv("BASE_URL")
+	}
+	if host == "" {
+		host = "http://localhost:8080"
 	}
 
 	created(c, "short url created successfully", createUrlResponse{
-		ShortUrl: host + "r/" + shortUrl,
+		ShortUrl: host + "/r/" + shortUrl,
 		LongUrl:  req.LongUrl,
 	})
 }
@@ -91,7 +96,10 @@ func HandleShortUrlRedirect(c *gin.Context) {
 
 func DeleteShortUrl(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
-	store.DeleteUrlMapping(shortUrl)
+	if err := store.DeleteUrlMapping(shortUrl); err != nil {
+		internalError(c, "failed to delete short URL")
+		return
+	}
 	success(c, 200, "short url deleted successfully", nil)
 }
 
@@ -118,10 +126,21 @@ func UpdateShortUrl(c *gin.Context) {
 		return
 	}
 
-	store.SaveUrlMapping(shortUrl, req.LongUrl, "")
+	if err := store.SaveUrlMapping(shortUrl, req.LongUrl, ""); err != nil {
+		internalError(c, "failed to update short URL")
+		return
+	}
+
+	host := os.Getenv("YOORL_BASE_URL")
+	if host == "" {
+		host = os.Getenv("BASE_URL")
+	}
+	if host == "" {
+		host = "http://localhost:8080"
+	}
 
 	success(c, 200, "short url updated successfully", createUrlResponse{
-		ShortUrl: os.Getenv("BASE_URL") + "r/" + shortUrl,
+		ShortUrl: host + "/r/" + shortUrl,
 		LongUrl:  req.LongUrl,
 	})
 }
@@ -129,10 +148,6 @@ func UpdateShortUrl(c *gin.Context) {
 func HandleListUrls(c *gin.Context) {
 	userId, _ := c.Get("user_id")
 	userIdStr, _ := userId.(string)
-
-	if qp := c.Query("user_id"); qp != "" {
-		userIdStr = qp
-	}
 
 	urls, err := store.ListUrls(userIdStr)
 	if err != nil {
