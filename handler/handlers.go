@@ -96,6 +96,10 @@ func HandleShortUrlRedirect(c *gin.Context) {
 
 func DeleteShortUrl(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
+	if _, err := store.RetrieveInitialUrl(shortUrl); err != nil {
+		notFound(c, "short URL not found")
+		return
+	}
 	if err := store.DeleteUrlMapping(shortUrl); err != nil {
 		internalError(c, "failed to delete short URL")
 		return

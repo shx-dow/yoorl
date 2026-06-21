@@ -59,6 +59,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case urlsLoadedMsg:
 		m.urls = []*store.UrlEntry(msg)
 		m.err = nil
+		m.consecutiveErrors = 0
 		m.clampCursor()
 		if len(m.urls) > 0 {
 			m.analytics = nil
@@ -73,9 +74,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.err = error(msg)
+		m.consecutiveErrors++
 
 	case tickMsg:
-		cmds = append(cmds, checkHealth(m.client), loadURLs(m.client), tick())
+		interval := 5 * time.Second
+		if m.consecutiveErrors > 0 {
+			interval = time.Duration(m.consecutiveErrors) * 5 * time.Second
+			if interval > 30*time.Second {
+				interval = 30 * time.Second
+			}
+		}
+		cmds = append(cmds, checkHealth(m.client), loadURLs(m.client), tickInterval(interval))
 
 	case noteTimeoutMsg:
 		m.note = ""

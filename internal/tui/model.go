@@ -19,23 +19,24 @@ const (
 )
 
 type model struct {
-	client       *Client
-	screen       screen
-	urls         []*store.UrlEntry
-	cursor       int
-	foldOpen     bool
-	analytics    *store.Analytics
-	err          error
-	urlInput     textinput.Model
-	aliasInput   textinput.Model
-	focusedInput int
-	quitting     bool
-	width        int
-	height       int
-	note         string
-	noteUntil    time.Time
-	qrDisplay    string
-	qrURL        string
+	client            *Client
+	screen            screen
+	urls              []*store.UrlEntry
+	cursor            int
+	foldOpen          bool
+	analytics         *store.Analytics
+	err               error
+	urlInput          textinput.Model
+	aliasInput        textinput.Model
+	focusedInput      int
+	quitting          bool
+	width             int
+	height            int
+	note              string
+	noteUntil         time.Time
+	qrDisplay         string
+	qrURL             string
+	consecutiveErrors int
 }
 
 type urlsLoadedMsg []*store.UrlEntry
@@ -110,7 +111,7 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		checkHealth(m.client),
 		loadURLs(m.client),
-		tick(),
+		tickInterval(5*time.Second),
 	)
 }
 
@@ -143,8 +144,8 @@ func loadAnalytics(client *Client, shortURL string) tea.Cmd {
 	}
 }
 
-func tick() tea.Cmd {
-	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+func tickInterval(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
 		return tickMsg{}
 	})
 }
