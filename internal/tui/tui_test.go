@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/shx-dow/yoorl/internal/client"
 	"github.com/shx-dow/yoorl/store"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +42,7 @@ func TestMovingSelectionClosesAnalyticsFold(t *testing.T) {
 
 func dashboardTestModel(width int) model {
 	return model{
-		client: &Client{BaseURL: "http://localhost:8080"},
+		client: &Client{Client: client.New("http://localhost:8080", "")},
 		width:  width,
 		urls: []*store.UrlEntry{
 			{ShortUrl: "launch-26", LongUrl: "https://yoorl.dev/releases/summer", TotalClicks: 842},

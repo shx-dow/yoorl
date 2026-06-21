@@ -17,6 +17,7 @@ import (
 	"github.com/shx-dow/yoorl/internal/analytics"
 	"github.com/shx-dow/yoorl/internal/client"
 	"github.com/shx-dow/yoorl/internal/middleware"
+	"github.com/shx-dow/yoorl/store"
 	"github.com/shx-dow/yoorl/internal/tui"
 	qrcode "github.com/skip2/go-qrcode"
 )
